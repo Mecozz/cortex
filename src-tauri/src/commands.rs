@@ -32,6 +32,7 @@ pub struct Settings {
     pub privacy_mode: bool,
     pub local_only: bool,
     pub sync_folder: String,
+    pub tool_review: String,
 }
 
 impl Default for Settings {
@@ -47,6 +48,7 @@ impl Default for Settings {
             privacy_mode: false,
             local_only: false,
             sync_folder: String::new(),
+            tool_review: "auto".into(),
         }
     }
 }
@@ -82,6 +84,7 @@ fn load_settings(conn: &Connection) -> Settings {
         privacy_mode: get_setting(conn, "privacy_mode", "false") == "true",
         local_only: get_setting(conn, "local_only", "false") == "true",
         sync_folder: get_setting(conn, "sync_folder", ""),
+        tool_review: get_setting(conn, "tool_review", "auto"),
     }
 }
 
@@ -107,6 +110,7 @@ pub fn save_settings(settings: Settings, state: State<DbState>) -> Result<(), St
     let lv = settings.local_only.to_string();
     set_setting(&conn, "local_only", &lv).map_err(|e| e.to_string())?;
     set_setting(&conn, "sync_folder", &settings.sync_folder).map_err(|e| e.to_string())?;
+    set_setting(&conn, "tool_review", &settings.tool_review).map_err(|e| e.to_string())?;
     Ok(())
 }
 

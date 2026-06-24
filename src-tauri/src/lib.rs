@@ -9,6 +9,7 @@ pub mod memory;
 pub mod providers;
 pub mod sync;
 pub mod tasks;
+pub mod telegram;
 pub mod tools;
 pub mod vault;
 pub mod watch;
@@ -70,6 +71,7 @@ pub fn run() {
             delete_tool,
             run_tool,
             forge_tool,
+            telegram_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -152,6 +154,7 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
         backup::health::BackupHealth.health(),
         sync::health::SyncHealth.health(),
         tools::health::ToolsHealth.health(),
+        telegram::health::TelegramHealth.health(),
         watch::health::WatchHealth.health(),
     ];
     let has_key = state
@@ -328,4 +331,20 @@ async fn forge_tool(description: String, state: State<'_, DbState>) -> Result<St
         .unwrap_or_default()
     };
     tools::forge(&description, &api_key).await
+}
+
+#[tauri::command]
+async fn telegram_send(
+    message: String,
+    state: State<'_, DbState>,
+    vault_state: State<'_, VaultState>,
+) -> Result<(), String> {
+    let (bot_token, chat_id) = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        let vk = vault_state.0.lock().map_err(|e| e.to_string())?;
+        let token = vault::get(&conn, &vk, "telegram_bot_token").unwrap_or_default();
+        let chat = vault::get(&conn, &vk, "telegram_chat_id").unwrap_or_default();
+        (token, chat)
+    };
+    telegram::notify(&message, &bot_token, &chat_id).await
 }

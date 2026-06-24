@@ -13,6 +13,7 @@
     privacy_mode: boolean;
     local_only: boolean;
     sync_folder: string;
+    tool_review: string;
   }
 
   let { onClose } = $props<{ onClose: () => void }>();
@@ -28,6 +29,7 @@
     privacy_mode: false,
     local_only: false,
     sync_folder: "",
+    tool_review: "auto",
   });
 
   let saving = $state(false);
@@ -186,6 +188,18 @@
       <label class="toggle-label">
         <input type="checkbox" bind:checked={settings.local_only} />
         <span>Local only &mdash; block all cloud providers</span>
+      </label>
+    </section>
+
+    <section>
+      <h3>Tools</h3>
+      <label>
+        Tool review mode
+        <select bind:value={settings.tool_review}>
+          <option value="auto">Auto &#x2014; run without confirmation</option>
+          <option value="summary">Summary &#x2014; show name before running</option>
+          <option value="full">Full code &#x2014; show code before running</option>
+        </select>
       </label>
     </section>
 
