@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod commands;
 pub mod core;
 pub mod cost;
@@ -23,6 +24,7 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let db_path = data_dir.join("cortex.db");
+            backup::check_pending_restore(&data_dir, &db_path);
             let conn = db::init(&db_path).map_err(|e| e.to_string())?;
             let vault_key =
                 vault::VaultKey::load_or_create(&data_dir).map_err(|e| e.to_string())?;
@@ -52,6 +54,11 @@ pub fn run() {
             commands::delete_vault_item,
             get_brain_status,
             run_lib_now,
+            create_backup,
+            list_backups,
+            restore_backup,
+            delete_backup,
+            reset_level,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -131,6 +138,7 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
         cost::health::CostHealth.health(),
         librarian::health::LibrarianHealth.health(),
         vault::health::VaultHealth.health(),
+        backup::health::BackupHealth.health(),
         watch::health::WatchHealth.health(),
     ];
     let has_key = state
@@ -185,4 +193,52 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
 async fn run_lib_now(db_path: State<'_, DbPath>) -> Result<(), String> {
     run_lib_cycle(&db_path.0).await;
     Ok(())
+}
+
+#[tauri::command]
+fn create_backup(
+    name: Option<String>,
+    state: State<'_, DbState>,
+    db_path: State<'_, DbPath>,
+) -> Result<String, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let data_dir = db_path.0.parent().unwrap_or(&db_path.0);
+    backup::create(&conn, data_dir, name.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_backups(db_path: State<'_, DbPath>) -> Vec<backup::BackupEntry> {
+    let data_dir = db_path.0.parent().unwrap_or(&db_path.0);
+    backup::list(data_dir)
+}
+
+#[tauri::command]
+fn restore_backup(filename: String, db_path: State<'_, DbPath>) -> Result<(), String> {
+    let data_dir = db_path.0.parent().unwrap_or(&db_path.0);
+    backup::queue_restore(data_dir, &filename).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_backup(filename: String, db_path: State<'_, DbPath>) -> Result<(), String> {
+    let data_dir = db_path.0.parent().unwrap_or(&db_path.0);
+    backup::delete(data_dir, &filename).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reset_level(
+    level: u8,
+    state: State<'_, DbState>,
+    db_path: State<'_, DbPath>,
+) -> Result<String, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let data_dir = db_path.0.parent().unwrap_or(&db_path.0);
+    if level == 1 {
+        let backups = backup::list(data_dir);
+        let latest = backups.first().ok_or("No backups found for rollback")?;
+        backup::queue_restore(data_dir, &latest.filename).map_err(|e| e.to_string())?;
+        return Ok("restart_required".into());
+    }
+    backup::create(&conn, data_dir, Some("pre_reset")).map_err(|e| e.to_string())?;
+    backup::reset(&conn, level).map_err(|e| e.to_string())?;
+    Ok("done".into())
 }

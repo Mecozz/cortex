@@ -1,9 +1,10 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import Settings from "./lib/Settings.svelte";
-  import MemoryBrowser from "./lib/MemoryBrowser.svelte";
-  import TaskPanel from "./lib/TaskPanel.svelte";
+  import BackupPanel from "./lib/BackupPanel.svelte";
   import HealthPanel from "./lib/HealthPanel.svelte";
+  import MemoryBrowser from "./lib/MemoryBrowser.svelte";
+  import Settings from "./lib/Settings.svelte";
+  import TaskPanel from "./lib/TaskPanel.svelte";
   import VaultPanel from "./lib/VaultPanel.svelte";
 
   interface Message {
@@ -26,11 +27,7 @@
   let input = $state("");
   let loading = $state(false);
   let error = $state("");
-  let showSettings = $state(false);
-  let showMemory = $state(false);
-  let showTasks = $state(false);
-  let showHealth = $state(false);
-  let showVault = $state(false);
+  let activePanel = $state("");
   let messagesEl: HTMLElement | undefined = $state();
   let brainStatus = $state("green");
 
@@ -98,14 +95,6 @@
     messages = [];
     error = "";
   }
-
-  function openPanel(which: "settings" | "memory" | "tasks" | "health" | "vault") {
-    showSettings = which === "settings";
-    showMemory = which === "memory";
-    showTasks = which === "tasks";
-    showHealth = which === "health";
-    showVault = which === "vault";
-  }
 </script>
 
 <div class="app">
@@ -114,31 +103,42 @@
     <div class="header-actions">
       <button
         class="status-dot"
-        onclick={() => openPanel("health")}
+        onclick={() => (activePanel = "health")}
         title="Brain health"
         style="color: {statusColor[brainStatus] ?? '#888'}">&#x25CF;</button
       >
       <button class="icon-btn" onclick={clearChat} title="Clear chat">&#x1F5D1;</button>
-      <button class="icon-btn" onclick={() => openPanel("memory")} title="Memory">&#x1F9E0;</button>
-      <button class="icon-btn" onclick={() => openPanel("tasks")} title="Tasks">&#x2713;</button>
-      <button class="icon-btn" onclick={() => openPanel("vault")} title="Vault">&#x1F511;</button>
-      <button class="icon-btn" onclick={() => openPanel("settings")} title="Settings"
+      <button class="icon-btn" onclick={() => (activePanel = "memory")} title="Memory"
+        >&#x1F9E0;</button
+      >
+      <button class="icon-btn" onclick={() => (activePanel = "tasks")} title="Tasks"
+        >&#x2713;</button
+      >
+      <button class="icon-btn" onclick={() => (activePanel = "vault")} title="Vault"
+        >&#x1F511;</button
+      >
+      <button class="icon-btn" onclick={() => (activePanel = "backup")} title="Backup"
+        >&#x1F4BE;</button
+      >
+      <button class="icon-btn" onclick={() => (activePanel = "settings")} title="Settings"
         >&#x2699;</button
       >
     </div>
   </header>
 
   <div class="body">
-    {#if showSettings}
-      <Settings onClose={() => (showSettings = false)} />
-    {:else if showMemory}
-      <MemoryBrowser onClose={() => (showMemory = false)} />
-    {:else if showTasks}
-      <TaskPanel onClose={() => (showTasks = false)} />
-    {:else if showHealth}
-      <HealthPanel onClose={() => (showHealth = false)} />
-    {:else if showVault}
-      <VaultPanel onClose={() => (showVault = false)} />
+    {#if activePanel === "settings"}
+      <Settings onClose={() => (activePanel = "")} />
+    {:else if activePanel === "memory"}
+      <MemoryBrowser onClose={() => (activePanel = "")} />
+    {:else if activePanel === "tasks"}
+      <TaskPanel onClose={() => (activePanel = "")} />
+    {:else if activePanel === "health"}
+      <HealthPanel onClose={() => (activePanel = "")} />
+    {:else if activePanel === "vault"}
+      <VaultPanel onClose={() => (activePanel = "")} />
+    {:else if activePanel === "backup"}
+      <BackupPanel onClose={() => (activePanel = "")} />
     {:else}
       <main>
         <div class="messages" bind:this={messagesEl}>
