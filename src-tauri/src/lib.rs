@@ -9,6 +9,7 @@ pub mod memory;
 pub mod providers;
 pub mod sync;
 pub mod tasks;
+pub mod tools;
 pub mod vault;
 pub mod watch;
 
@@ -64,6 +65,11 @@ pub fn run() {
             sync_status,
             sync_import,
             check_update,
+            list_tools,
+            save_tool,
+            delete_tool,
+            run_tool,
+            forge_tool,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -145,6 +151,7 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
         vault::health::VaultHealth.health(),
         backup::health::BackupHealth.health(),
         sync::health::SyncHealth.health(),
+        tools::health::ToolsHealth.health(),
         watch::health::WatchHealth.health(),
     ];
     let has_key = state
@@ -279,4 +286,46 @@ async fn check_update() -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
     Ok(json["tag_name"].as_str().unwrap_or("").to_string())
+}
+
+#[tauri::command]
+fn list_tools(state: State<'_, DbState>) -> Result<Vec<tools::Tool>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    tools::list(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_tool(mut tool: tools::Tool, state: State<'_, DbState>) -> Result<(), String> {
+    if tool.id.is_empty() {
+        tool.id = uuid::Uuid::new_v4().to_string();
+    }
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    tools::upsert(&conn, &tool).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_tool(id: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    tools::delete(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn run_tool(id: String, args: Vec<String>, state: State<'_, DbState>) -> Result<String, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let tool = tools::get(&conn, &id).ok_or("Tool not found")?;
+    tools::run(&tool.code, args)
+}
+
+#[tauri::command]
+async fn forge_tool(description: String, state: State<'_, DbState>) -> Result<String, String> {
+    let api_key = {
+        let conn = state.0.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'api_key_anthropic'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .unwrap_or_default()
+    };
+    tools::forge(&description, &api_key).await
 }

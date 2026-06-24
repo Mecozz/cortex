@@ -5,6 +5,7 @@
   import MemoryBrowser from "./lib/MemoryBrowser.svelte";
   import Settings from "./lib/Settings.svelte";
   import TaskPanel from "./lib/TaskPanel.svelte";
+  import ToolsPanel from "./lib/ToolsPanel.svelte";
   import VaultPanel from "./lib/VaultPanel.svelte";
 
   interface Message {
@@ -38,6 +39,8 @@
     yellow: "#fbbf24",
     red: "#f87171",
   };
+
+  const go = (p: string) => () => (activePanel = p);
 
   async function refreshStatus() {
     const s = await invoke<BrainStatus>("get_brain_status").catch(() => null);
@@ -103,42 +106,35 @@
     <div class="header-actions">
       <button
         class="status-dot"
-        onclick={() => (activePanel = "health")}
+        onclick={go("health")}
         title="Brain health"
         style="color: {statusColor[brainStatus] ?? '#888'}">&#x25CF;</button
       >
-      <button class="icon-btn" onclick={clearChat} title="Clear chat">&#x1F5D1;</button>
-      <button class="icon-btn" onclick={() => (activePanel = "memory")} title="Memory"
-        >&#x1F9E0;</button
-      >
-      <button class="icon-btn" onclick={() => (activePanel = "tasks")} title="Tasks"
-        >&#x2713;</button
-      >
-      <button class="icon-btn" onclick={() => (activePanel = "vault")} title="Vault"
-        >&#x1F511;</button
-      >
-      <button class="icon-btn" onclick={() => (activePanel = "backup")} title="Backup"
-        >&#x1F4BE;</button
-      >
-      <button class="icon-btn" onclick={() => (activePanel = "settings")} title="Settings"
-        >&#x2699;</button
-      >
+      <button class="i" onclick={clearChat} title="Clear chat">🗑</button>
+      <button class="i" onclick={go("memory")} title="Memory">🧠</button>
+      <button class="i" onclick={go("tasks")} title="Tasks">✓</button>
+      <button class="i" onclick={go("tools")} title="Tools">🔧</button>
+      <button class="i" onclick={go("vault")} title="Vault">🔑</button>
+      <button class="i" onclick={go("backup")} title="Backup">💾</button>
+      <button class="i" onclick={go("settings")} title="Settings">⚙</button>
     </div>
   </header>
 
   <div class="body">
     {#if activePanel === "settings"}
-      <Settings onClose={() => (activePanel = "")} />
+      <Settings onClose={go("")} />
     {:else if activePanel === "memory"}
-      <MemoryBrowser onClose={() => (activePanel = "")} />
+      <MemoryBrowser onClose={go("")} />
     {:else if activePanel === "tasks"}
-      <TaskPanel onClose={() => (activePanel = "")} />
+      <TaskPanel onClose={go("")} />
     {:else if activePanel === "health"}
-      <HealthPanel onClose={() => (activePanel = "")} />
+      <HealthPanel onClose={go("")} />
     {:else if activePanel === "vault"}
-      <VaultPanel onClose={() => (activePanel = "")} />
+      <VaultPanel onClose={go("")} />
     {:else if activePanel === "backup"}
-      <BackupPanel onClose={() => (activePanel = "")} />
+      <BackupPanel onClose={go("")} />
+    {:else if activePanel === "tools"}
+      <ToolsPanel onClose={go("")} />
     {:else}
       <main>
         <div class="messages" bind:this={messagesEl}>
@@ -238,7 +234,7 @@
     opacity: 0.7;
   }
 
-  .icon-btn {
+  .i {
     background: none;
     border: 1px solid #333;
     color: #888;
@@ -251,7 +247,7 @@
       border-color 0.15s;
   }
 
-  .icon-btn:hover {
+  .i:hover {
     color: #e8e8ec;
     border-color: #555;
   }
