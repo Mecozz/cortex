@@ -37,11 +37,12 @@
   let loadError = $state("");
 
   const claudeModels = [
-    "claude-opus-4-7",
+    "claude-fable-5",
+    "claude-opus-4-8",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-haiku-20240307",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
   ];
 
   const ollamaModels = ["llama3.2", "llama3.1", "mistral", "phi3", "gemma2"];
