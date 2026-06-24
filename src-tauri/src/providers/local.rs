@@ -16,7 +16,6 @@ impl OllamaProvider {
             base_url,
         }
     }
-
 }
 
 impl Default for OllamaProvider {
