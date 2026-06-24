@@ -3,6 +3,7 @@ pub mod core;
 pub mod cost;
 pub mod db;
 pub mod inject;
+pub mod memory;
 pub mod providers;
 
 use commands::DbState;
@@ -25,6 +26,7 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::chat_message,
+            commands::remember_turn,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
