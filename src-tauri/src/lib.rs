@@ -74,6 +74,7 @@ pub fn run() {
             forge_tool,
             telegram_send,
             export_data,
+            read_claude_credentials,
             import_data,
         ])
         .run(tauri::generate_context!())
@@ -365,4 +366,19 @@ fn export_data(state: State<'_, DbState>, db_path: State<'_, DbPath>) -> Result<
 fn import_data(path: String, state: State<'_, DbState>) -> Result<usize, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     portability::import_json(&conn, &path)
+}
+
+#[tauri::command]
+fn read_claude_credentials() -> Result<String, String> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map_err(|_| "Cannot find home directory".to_string())?;
+    let path = std::path::Path::new(&home).join(".claude").join(".credentials.json");
+    let content = std::fs::read_to_string(&path)
+        .map_err(|_| "Claude Code not found. Install Claude Code and sign in first.".to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    v["claudeAiOauth"]["accessToken"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "No access token found in Claude Code credentials".to_string())
 }

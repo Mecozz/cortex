@@ -103,6 +103,10 @@
         checking = false;
       });
   }
+  const importFromClaude = () =>
+    invoke<string>("read_claude_credentials")
+      .then((t) => (settings.api_key_anthropic = t))
+      .catch((e) => (loadError = String(e)));
 </script>
 
 <div class="settings">
