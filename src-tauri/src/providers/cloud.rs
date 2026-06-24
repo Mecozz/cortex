@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{CompletionRequest, CompletionResponse, Provider, ProviderError};
 
+const OAUTH_CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const OAUTH_TOKEN_URL: &str = "https://console.anthropic.com/api/oauth/token";
+
 pub struct ClaudeProvider {
     client: Client,
     api_key: String,
@@ -18,18 +21,64 @@ impl ClaudeProvider {
     }
 }
 
-fn fresh_oauth_token() -> Option<String> {
+fn credentials_path() -> Option<std::path::PathBuf> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .ok()?;
-    let path = std::path::Path::new(&home)
-        .join(".claude")
-        .join(".credentials.json");
-    let content = std::fs::read_to_string(&path).ok()?;
+    Some(
+        std::path::Path::new(&home)
+            .join(".claude")
+            .join(".credentials.json"),
+    )
+}
+
+fn read_access_token() -> Option<String> {
+    let content = std::fs::read_to_string(credentials_path()?).ok()?;
     let v: serde_json::Value = serde_json::from_str(&content).ok()?;
     v["claudeAiOauth"]["accessToken"]
         .as_str()
         .map(|s| s.to_string())
+}
+
+async fn do_token_refresh(client: &Client) -> Option<String> {
+    let path = credentials_path()?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let creds: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let refresh_token = creds["claudeAiOauth"]["refreshToken"].as_str()?;
+
+    let resp = client
+        .post(OAUTH_TOKEN_URL)
+        .json(&serde_json::json!({
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": OAUTH_CLIENT_ID
+        }))
+        .send()
+        .await
+        .ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let body: serde_json::Value = resp.json().await.ok()?;
+    let new_token = body["access_token"].as_str()?.to_string();
+
+    // Write refreshed token back so Claude Code stays in sync
+    let mut updated = creds.clone();
+    updated["claudeAiOauth"]["accessToken"] = serde_json::Value::String(new_token.clone());
+    if let Some(exp) = body["expires_in"].as_u64() {
+        let expires_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()?
+            .as_millis() as u64
+            + exp * 1000;
+        updated["claudeAiOauth"]["expiresAt"] =
+            serde_json::Value::Number(expires_at.into());
+    }
+    let _ = std::fs::write(&path, serde_json::to_string_pretty(&updated).ok()?);
+
+    Some(new_token)
 }
 
 #[derive(Serialize)]
@@ -93,9 +142,7 @@ fn build_request(
     }
 }
 
-async fn parse_response(
-    resp: reqwest::Response,
-) -> Result<CompletionResponse, ProviderError> {
+async fn parse_response(resp: reqwest::Response) -> Result<CompletionResponse, ProviderError> {
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
@@ -158,14 +205,21 @@ impl Provider for ClaudeProvider {
             messages,
         };
 
-        let resp = build_request(&self.client, &self.api_key, &body)
+        // For OAuth tokens, always read the freshest token from disk first
+        let token = if self.api_key.starts_with("sk-ant-oat01-") {
+            read_access_token().unwrap_or_else(|| self.api_key.clone())
+        } else {
+            self.api_key.clone()
+        };
+
+        let resp = build_request(&self.client, &token, &body)
             .send()
             .await
             .map_err(|e| ProviderError::NetworkError(e.to_string()))?;
 
-        // On 401 with OAuth token, refresh from credentials file and retry once
+        // On 401 with OAuth, do a real refresh via the OAuth endpoint and retry
         if resp.status().as_u16() == 401 && self.api_key.starts_with("sk-ant-oat01-") {
-            if let Some(fresh) = fresh_oauth_token() {
+            if let Some(fresh) = do_token_refresh(&self.client).await {
                 let resp2 = build_request(&self.client, &fresh, &body)
                     .send()
                     .await
