@@ -1,16 +1,22 @@
 use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "001",
-    include_str!("../../migrations/001_initial_schema.sql"),
-)];
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "001",
+        include_str!("../../migrations/001_initial_schema.sql"),
+    ),
+    (
+        "002",
+        include_str!("../../migrations/002_settings.sql"),
+    ),
+];
 
 pub fn run(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
-            version TEXT PRIMARY KEY,
-            applied_at INTEGER NOT NULL
+            version     TEXT PRIMARY KEY,
+            applied_at  INTEGER NOT NULL
         );",
     )?;
 
