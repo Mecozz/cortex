@@ -7,6 +7,7 @@ pub mod inject;
 pub mod librarian;
 pub mod memory;
 pub mod providers;
+pub mod sync;
 pub mod tasks;
 pub mod vault;
 pub mod watch;
@@ -59,6 +60,10 @@ pub fn run() {
             restore_backup,
             delete_backup,
             reset_level,
+            sync_export,
+            sync_status,
+            sync_import,
+            check_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -139,6 +144,7 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
         librarian::health::LibrarianHealth.health(),
         vault::health::VaultHealth.health(),
         backup::health::BackupHealth.health(),
+        sync::health::SyncHealth.health(),
         watch::health::WatchHealth.health(),
     ];
     let has_key = state
@@ -241,4 +247,36 @@ fn reset_level(
     backup::create(&conn, data_dir, Some("pre_reset")).map_err(|e| e.to_string())?;
     backup::reset(&conn, level).map_err(|e| e.to_string())?;
     Ok("done".into())
+}
+
+#[tauri::command]
+fn sync_export(sync_folder: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    sync::export(&conn, &sync_folder).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn sync_status(sync_folder: String, db_path: State<'_, DbPath>) -> sync::SyncStatus {
+    sync::status(&db_path.0, &sync_folder)
+}
+
+#[tauri::command]
+fn sync_import(sync_folder: String, db_path: State<'_, DbPath>) -> Result<(), String> {
+    let data_dir = db_path.0.parent().unwrap_or(&db_path.0);
+    sync::queue_import(data_dir, &sync_folder).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn check_update() -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .user_agent("cortex-app/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get("https://api.github.com/repos/Mecozz/cortex/releases/latest")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(json["tag_name"].as_str().unwrap_or("").to_string())
 }

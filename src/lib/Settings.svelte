@@ -12,6 +12,7 @@
     ollama_url: string;
     privacy_mode: boolean;
     local_only: boolean;
+    sync_folder: string;
   }
 
   let { onClose } = $props<{ onClose: () => void }>();
@@ -26,6 +27,7 @@
     ollama_url: "http://localhost:11434",
     privacy_mode: false,
     local_only: false,
+    sync_folder: "",
   });
 
   let saving = $state(false);
@@ -60,6 +62,44 @@
     } finally {
       saving = false;
     }
+  }
+
+  let syncing = $state(false);
+  let syncMsg = $state("");
+  let checking = $state(false);
+  let updateMsg = $state("");
+
+  function exportSync() {
+    syncing = true;
+    syncMsg = "";
+    invoke("sync_export", { syncFolder: settings.sync_folder })
+      .then(() => (syncMsg = "Exported."))
+      .catch((e) => (syncMsg = String(e)))
+      .finally(() => {
+        syncing = false;
+      });
+  }
+
+  function importSync() {
+    syncing = true;
+    syncMsg = "";
+    invoke("sync_import", { syncFolder: settings.sync_folder })
+      .then(() => (syncMsg = "Import queued — restart to apply."))
+      .catch((e) => (syncMsg = String(e)))
+      .finally(() => {
+        syncing = false;
+      });
+  }
+
+  function checkUpdate() {
+    checking = true;
+    updateMsg = "";
+    invoke<string>("check_update")
+      .then((v) => (updateMsg = v || "Already up to date."))
+      .catch((e) => (updateMsg = String(e)))
+      .finally(() => {
+        checking = false;
+      });
   }
 </script>
 
@@ -147,6 +187,29 @@
         <input type="checkbox" bind:checked={settings.local_only} />
         <span>Local only &mdash; block all cloud providers</span>
       </label>
+    </section>
+
+    <section>
+      <h3>Sync</h3>
+      <label>
+        Sync folder path
+        <input type="text" bind:value={settings.sync_folder} placeholder="/path/to/shared/folder" />
+      </label>
+      <div class="btn-row">
+        <button onclick={exportSync} disabled={syncing || !settings.sync_folder}> Export </button>
+        <button onclick={importSync} disabled={syncing || !settings.sync_folder}> Import </button>
+      </div>
+      {#if syncMsg}
+        <p class="smsg">{syncMsg}</p>
+      {/if}
+    </section>
+
+    <section>
+      <h3>Updates</h3>
+      <button onclick={checkUpdate} disabled={checking}> Check for updates </button>
+      {#if updateMsg}
+        <p class="smsg">{updateMsg}</p>
+      {/if}
     </section>
   </div>
 
@@ -303,5 +366,15 @@
   button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .smsg {
+    font-size: 12px;
+    color: #aaa;
   }
 </style>

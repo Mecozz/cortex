@@ -31,6 +31,7 @@ pub struct Settings {
     pub ollama_url: String,
     pub privacy_mode: bool,
     pub local_only: bool,
+    pub sync_folder: String,
 }
 
 impl Default for Settings {
@@ -45,6 +46,7 @@ impl Default for Settings {
             ollama_url: "http://localhost:11434".into(),
             privacy_mode: false,
             local_only: false,
+            sync_folder: String::new(),
         }
     }
 }
@@ -79,6 +81,7 @@ fn load_settings(conn: &Connection) -> Settings {
         ollama_url: get_setting(conn, "ollama_url", &d.ollama_url),
         privacy_mode: get_setting(conn, "privacy_mode", "false") == "true",
         local_only: get_setting(conn, "local_only", "false") == "true",
+        sync_folder: get_setting(conn, "sync_folder", ""),
     }
 }
 
@@ -103,6 +106,7 @@ pub fn save_settings(settings: Settings, state: State<DbState>) -> Result<(), St
     set_setting(&conn, "privacy_mode", &pv).map_err(|e| e.to_string())?;
     let lv = settings.local_only.to_string();
     set_setting(&conn, "local_only", &lv).map_err(|e| e.to_string())?;
+    set_setting(&conn, "sync_folder", &settings.sync_folder).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -118,7 +122,7 @@ pub async fn chat_message(
     let (settings, known_facts, open_tasks) = match state.0.lock() {
         Ok(conn) => {
             let mut s = load_settings(&conn);
-            // VAULT → INJECT: use vault API key if settings key is empty
+            // VAULT ➕ INJECT: use vault API key if settings key is empty
             if s.api_key_anthropic.is_empty() {
                 if let Ok(vk) = vault_state.0.lock() {
                     if let Some(key) = vault::get(&conn, &vk, "api_key_anthropic") {

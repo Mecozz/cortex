@@ -94,8 +94,13 @@ pub fn queue_restore(data_dir: &Path, filename: &str) -> std::io::Result<()> {
 
 pub fn check_pending_restore(data_dir: &Path, db_path: &Path) {
     let pending = data_dir.join("restore_pending.txt");
-    if let Ok(filename) = std::fs::read_to_string(&pending) {
-        let src = backup_dir(data_dir).join(filename.trim());
+    if let Ok(path_str) = std::fs::read_to_string(&pending) {
+        let path_str = path_str.trim();
+        let src = if Path::new(path_str).is_absolute() {
+            PathBuf::from(path_str)
+        } else {
+            backup_dir(data_dir).join(path_str)
+        };
         if src.exists() {
             let _ = std::fs::copy(&src, db_path);
         }
