@@ -6,6 +6,7 @@ pub mod db;
 pub mod inject;
 pub mod librarian;
 pub mod memory;
+pub mod portability;
 pub mod providers;
 pub mod sync;
 pub mod tasks;
@@ -72,6 +73,8 @@ pub fn run() {
             run_tool,
             forge_tool,
             telegram_send,
+            export_data,
+            import_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -155,6 +158,8 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
         sync::health::SyncHealth.health(),
         tools::health::ToolsHealth.health(),
         telegram::health::TelegramHealth.health(),
+        portability::health::PortabilityHealth.health(),
+        portability::health::PortabilityHealth.health(),
         watch::health::WatchHealth.health(),
     ];
     let has_key = state
@@ -347,4 +352,17 @@ async fn telegram_send(
         (token, chat)
     };
     telegram::notify(&message, &bot_token, &chat_id).await
+}
+
+#[tauri::command]
+fn export_data(state: State<'_, DbState>, db_path: State<'_, DbPath>) -> Result<String, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let data_dir = db_path.0.parent().unwrap_or(&db_path.0);
+    portability::export_json(&conn, data_dir)
+}
+
+#[tauri::command]
+fn import_data(path: String, state: State<'_, DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    portability::import_json(&conn, &path)
 }

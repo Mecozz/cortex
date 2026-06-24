@@ -12,12 +12,13 @@
   let { onClose } = $props<{ onClose: () => void }>();
 
   let backups: BackupEntry[] = $state([]);
-  let tab = $state<"backups" | "reset">("backups");
+  let tab = $state<"backups" | "reset" | "data">("backups");
   let newName = $state("");
   let busy = $state(false);
   let confirmLevel = $state(0);
   let statusMsg = $state("");
   let loadError = $state("");
+  let portMsg = $state("");
 
   const resetLevels = [
     { level: 1, label: "L1 Rollback", desc: "Restore most recent backup (restart required)" },
@@ -100,6 +101,10 @@
   const fmt = (ts: number) => new Date(ts * 1000).toLocaleString();
   const fmtSize = (b: number) =>
     b < 1048576 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1048576).toFixed(1)} MB`;
+  const exportJson = () =>
+    invoke<string>("export_data")
+      .then((p) => (portMsg = p))
+      .catch((e) => (portMsg = String(e)));
 </script>
 
 <div class="panel">
@@ -110,6 +115,7 @@
 
   <div class="tabs">
     <button class:active={tab === "backups"} onclick={() => (tab = "backups")}>Backups</button>
+    <button class:active={tab === "data"} onclick={() => (tab = "data")}>Data</button>
     <button class:active={tab === "reset"} onclick={() => (tab = "reset")}>Reset</button>
   </div>
 
