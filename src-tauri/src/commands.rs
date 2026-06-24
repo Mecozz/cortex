@@ -116,7 +116,7 @@ pub async fn chat_message(
     let injector = Injector::new(system);
     let request = injector.assemble(messages, settings.model.clone());
 
-    let policy = FallbackPolicy::from_str(&settings.fallback_policy);
+    let policy: FallbackPolicy = settings.fallback_policy.parse().unwrap_or_default();
 
     let result: Result<CompletionResponse, ProviderError> = match settings.provider.as_str() {
         "ollama" => {
