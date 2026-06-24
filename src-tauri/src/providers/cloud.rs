@@ -97,12 +97,17 @@ impl Provider for ClaudeProvider {
             messages,
         };
 
-        let resp = self
+        let req = self
             .client
             .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
-            .json(&body)
+            .json(&body);
+        let req = if self.api_key.starts_with("sk-ant-oat01-") {
+            req.header("Authorization", format!("Bearer {}", self.api_key))
+        } else {
+            req.header("x-api-key", &self.api_key)
+        };
+        let resp = req
             .send()
             .await
             .map_err(|e| ProviderError::NetworkError(e.to_string()))?;
