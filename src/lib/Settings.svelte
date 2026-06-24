@@ -150,6 +150,7 @@
           autocomplete="off"
         />
       </label>
+      <button type="button" onclick={importFromClaude}>Import from Claude Code</button>
       <label>
         Model
         <select bind:value={settings.model}>
