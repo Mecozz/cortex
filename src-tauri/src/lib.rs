@@ -9,9 +9,10 @@ pub mod providers;
 pub mod tasks;
 pub mod watch;
 
+use crate::core::health::HealthCheck;
 use commands::{DbPath, DbState, WatchState};
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Manager, State};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,8 +43,8 @@ pub fn run() {
             commands::search_memory,
             commands::get_tasks,
             commands::close_task,
-            commands::get_brain_status,
-            commands::run_lib_now,
+            get_brain_status,
+            run_lib_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -111,4 +112,69 @@ pub async fn run_lib_cycle(db_path: &std::path::Path) {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch()",
         rusqlite::params![now],
     );
+}
+
+#[tauri::command]
+fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> watch::BrainStatus {
+    let cb = watch_state.0.lock().ok();
+    let mut reports = vec![
+        memory::health::MemoryHealth.health(),
+        tasks::health::TaskHealth.health(),
+        inject::health::InjectHealth.health(),
+        cost::health::CostHealth.health(),
+        librarian::health::LibrarianHealth.health(),
+        watch::health::WatchHealth.health(),
+    ];
+    let has_key = state
+        .0
+        .lock()
+        .map(|conn| {
+            !conn
+                .query_row(
+                    "SELECT value FROM settings WHERE key = 'api_key_anthropic'",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap_or_default()
+                .is_empty()
+        })
+        .unwrap_or(false);
+    reports.push(
+        providers::health::ProvidersHealth {
+            cloud_available: has_key,
+            local_available: true,
+        }
+        .health(),
+    );
+    let modules: Vec<watch::ModuleHealth> = reports
+        .into_iter()
+        .map(|r| {
+            let failures = cb.as_ref().map(|c| c.failure_count(&r.module)).unwrap_or(0);
+            let disabled = cb
+                .as_ref()
+                .map(|c| c.is_disabled(&r.module))
+                .unwrap_or(false);
+            watch::ModuleHealth {
+                module: r.module,
+                status: format!("{:?}", r.status).to_lowercase(),
+                message: r.message,
+                failures,
+                disabled,
+            }
+        })
+        .collect();
+    let overall = if modules.iter().any(|m| m.disabled || m.status == "red") {
+        "red".into()
+    } else if modules.iter().any(|m| m.status == "yellow") {
+        "yellow".into()
+    } else {
+        "green".into()
+    };
+    watch::BrainStatus { overall, modules }
+}
+
+#[tauri::command]
+async fn run_lib_now(db_path: State<'_, DbPath>) -> Result<(), String> {
+    run_lib_cycle(&db_path.0).await;
+    Ok(())
 }
