@@ -1,3 +1,4 @@
+use crate::core::types::Message;
 use rusqlite::{Connection, Result};
 use uuid::Uuid;
 
@@ -47,6 +48,27 @@ pub fn search(
     )?;
     let rows = stmt.query_map(rusqlite::params![proj_id, pattern, limit as i64], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    rows.collect()
+}
+
+pub fn since(
+    conn: &Connection,
+    proj_id: &str,
+    since_ts: i64,
+    limit: usize,
+) -> Result<Vec<Message>> {
+    let mut stmt = conn.prepare(
+        "SELECT role, content FROM episodic
+         WHERE proj_id = ?1 AND timestamp > ?2
+         ORDER BY timestamp ASC
+         LIMIT ?3",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![proj_id, since_ts, limit as i64], |row| {
+        Ok(Message {
+            role: row.get(0)?,
+            content: row.get(1)?,
+        })
     })?;
     rows.collect()
 }

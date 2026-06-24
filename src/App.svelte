@@ -3,6 +3,7 @@
   import Settings from "./lib/Settings.svelte";
   import MemoryBrowser from "./lib/MemoryBrowser.svelte";
   import TaskPanel from "./lib/TaskPanel.svelte";
+  import HealthPanel from "./lib/HealthPanel.svelte";
 
   interface Message {
     role: "user" | "assistant";
@@ -17,6 +18,11 @@
     provider: string;
   }
 
+  interface BrainStatus {
+    overall: string;
+    modules: unknown[];
+  }
+
   let messages: Message[] = $state([]);
   let input = $state("");
   let loading = $state(false);
@@ -24,9 +30,25 @@
   let showSettings = $state(false);
   let showMemory = $state(false);
   let showTasks = $state(false);
+  let showHealth = $state(false);
   let messagesEl: HTMLElement | undefined = $state();
+  let brainStatus = $state("green");
 
   const conversationId = crypto.randomUUID();
+
+  const statusColor: Record<string, string> = {
+    green: "#4ade80",
+    yellow: "#fbbf24",
+    red: "#f87171",
+  };
+
+  async function refreshStatus() {
+    const s = await invoke<BrainStatus>("get_brain_status").catch(() => null);
+    if (s) brainStatus = s.overall;
+  }
+
+  refreshStatus();
+  setInterval(refreshStatus, 30_000);
 
   async function send() {
     const text = input.trim();
@@ -74,42 +96,29 @@
     messages = [];
     error = "";
   }
+
+  function openPanel(which: "settings" | "memory" | "tasks" | "health") {
+    showSettings = which === "settings";
+    showMemory = which === "memory";
+    showTasks = which === "tasks";
+    showHealth = which === "health";
+  }
 </script>
 
 <div class="app">
   <header>
     <span class="logo">🧠 Cortex</span>
     <div class="header-actions">
+      <button
+        class="status-dot"
+        onclick={() => openPanel("health")}
+        title="Brain health"
+        style="color: {statusColor[brainStatus] ?? '#888'}">●</button
+      >
       <button class="icon-btn" onclick={clearChat} title="Clear chat">🗑</button>
-      <button
-        class="icon-btn"
-        onclick={() => {
-          showMemory = !showMemory;
-          showTasks = false;
-          showSettings = false;
-        }}
-        title="Memory">💡</button
-      >
-      <button
-        class="icon-btn"
-        onclick={() => {
-          showTasks = !showTasks;
-          showMemory = false;
-          showSettings = false;
-        }}
-        title="Tasks">✓</button
-      >
-      <button
-        class="icon-btn"
-        onclick={() => {
-          showSettings = !showSettings;
-          showMemory = false;
-          showTasks = false;
-        }}
-        title="Settings"
-      >
-        ⚙
-      </button>
+      <button class="icon-btn" onclick={() => openPanel("memory")} title="Memory">💡</button>
+      <button class="icon-btn" onclick={() => openPanel("tasks")} title="Tasks">✓</button>
+      <button class="icon-btn" onclick={() => openPanel("settings")} title="Settings">⚙</button>
     </div>
   </header>
 
@@ -120,6 +129,8 @@
       <MemoryBrowser onClose={() => (showMemory = false)} />
     {:else if showTasks}
       <TaskPanel onClose={() => (showTasks = false)} />
+    {:else if showHealth}
+      <HealthPanel onClose={() => (showHealth = false)} />
     {:else}
       <main>
         <div class="messages" bind:this={messagesEl}>
@@ -199,6 +210,21 @@
   .header-actions {
     display: flex;
     gap: 8px;
+    align-items: center;
+  }
+
+  .status-dot {
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    transition: opacity 0.15s;
+  }
+
+  .status-dot:hover {
+    opacity: 0.7;
   }
 
   .icon-btn {
