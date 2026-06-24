@@ -87,8 +87,7 @@ pub fn save_settings(settings: Settings, state: State<DbState>) -> Result<(), St
     set_setting(&conn, "provider", &settings.provider).map_err(|e| e.to_string())?;
     set_setting(&conn, "model", &settings.model).map_err(|e| e.to_string())?;
     set_setting(&conn, "system_prompt", &settings.system_prompt).map_err(|e| e.to_string())?;
-    set_setting(&conn, "fallback_policy", &settings.fallback_policy)
-        .map_err(|e| e.to_string())?;
+    set_setting(&conn, "fallback_policy", &settings.fallback_policy).map_err(|e| e.to_string())?;
     set_setting(&conn, "ollama_url", &settings.ollama_url).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -123,8 +122,16 @@ pub async fn chat_message(
     let policy: FallbackPolicy = settings.fallback_policy.parse().unwrap_or_default();
 
     let result = match settings.provider.as_str() {
-        "ollama" => OllamaProvider::new(settings.ollama_url.clone()).complete(request).await,
-        _ => ClaudeProvider::new(settings.api_key_anthropic.clone()).complete(request).await,
+        "ollama" => {
+            OllamaProvider::new(settings.ollama_url.clone())
+                .complete(request)
+                .await
+        }
+        _ => {
+            ClaudeProvider::new(settings.api_key_anthropic.clone())
+                .complete(request)
+                .await
+        }
     };
 
     match result {

@@ -1,5 +1,5 @@
-use rusqlite::Connection;
 use super::conf::Fact;
+use rusqlite::Connection;
 
 /// PASS1 — fast retrieval layer.
 /// Returns all current high-confidence facts for a project.

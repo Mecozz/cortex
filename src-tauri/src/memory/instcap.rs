@@ -79,7 +79,11 @@ pub async fn extract(messages: &[Message], api_key: &str) -> Vec<ExtractedFact> 
         Err(_) => return vec![],
     };
 
-    let text = parsed.content.into_iter().map(|c| c.text).collect::<String>();
+    let text = parsed
+        .content
+        .into_iter()
+        .map(|c| c.text)
+        .collect::<String>();
     let raw: Vec<RawFact> = serde_json::from_str(&text).unwrap_or_default();
 
     raw.into_iter()

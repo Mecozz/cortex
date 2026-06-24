@@ -38,6 +38,7 @@
       });
       if (resp.content) {
         messages = [...messages, { role: "assistant", content: resp.content }];
+        invoke("remember_turn", { messages: messages.slice(-6) }).catch(() => {});
       }
     } catch (e) {
       error = String(e);
@@ -68,9 +69,9 @@
 
 <div class="app">
   <header>
-    <span class="logo">⬡ Cortex</span>
+    <span class="logo">🧠 Cortex</span>
     <div class="header-actions">
-      <button class="icon-btn" onclick={clearChat} title="Clear chat">↺</button>
+      <button class="icon-btn" onclick={clearChat} title="Clear chat">🗑</button>
       <button class="icon-btn" onclick={() => (showSettings = !showSettings)} title="Settings">
         ⚙
       </button>
@@ -92,7 +93,7 @@
         {/each}
         {#if loading}
           <div class="message assistant">
-            <div class="bubble thinking">…</div>
+            <div class="bubble thinking">···</div>
           </div>
         {/if}
       </div>

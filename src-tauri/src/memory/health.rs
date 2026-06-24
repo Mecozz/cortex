@@ -1,17 +1,17 @@
-use crate::core::health::{HealthReport, HealthStatus, Module};
+use crate::core::health::{HealthCheck, HealthReport, HealthStatus};
 
 pub struct MemoryHealth;
 
-impl Module for MemoryHealth {
+impl HealthCheck for MemoryHealth {
     fn module_name(&self) -> &str {
         "memory"
     }
 
     fn health(&self) -> HealthReport {
-        HealthReport {
-            module: self.module_name().into(),
-            status: HealthStatus::Ok,
-            message: "INSTCAP + CONF + PASS1 active".into(),
-        }
+        HealthReport::new(
+            self.module_name(),
+            HealthStatus::Green,
+            Some("INSTCAP + CONF + PASS1 active".into()),
+        )
     }
 }
