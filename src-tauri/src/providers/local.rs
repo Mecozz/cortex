@@ -17,7 +17,10 @@ impl OllamaProvider {
         }
     }
 
-    pub fn default() -> Self {
+}
+
+impl Default for OllamaProvider {
+    fn default() -> Self {
         Self::new("http://localhost:11434".into())
     }
 }
