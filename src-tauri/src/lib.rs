@@ -5,6 +5,7 @@ pub mod db;
 pub mod inject;
 pub mod memory;
 pub mod providers;
+pub mod tasks;
 
 use commands::DbState;
 use std::sync::Mutex;
@@ -27,6 +28,10 @@ pub fn run() {
             commands::save_settings,
             commands::chat_message,
             commands::remember_turn,
+            commands::get_facts,
+            commands::search_memory,
+            commands::get_tasks,
+            commands::close_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

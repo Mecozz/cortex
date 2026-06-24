@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import Settings from "./lib/Settings.svelte";
+  import MemoryBrowser from "./lib/MemoryBrowser.svelte";
+  import TaskPanel from "./lib/TaskPanel.svelte";
 
   interface Message {
     role: "user" | "assistant";
@@ -20,7 +22,11 @@
   let loading = $state(false);
   let error = $state("");
   let showSettings = $state(false);
+  let showMemory = $state(false);
+  let showTasks = $state(false);
   let messagesEl: HTMLElement | undefined = $state();
+
+  const conversationId = crypto.randomUUID();
 
   async function send() {
     const text = input.trim();
@@ -38,7 +44,10 @@
       });
       if (resp.content) {
         messages = [...messages, { role: "assistant", content: resp.content }];
-        invoke("remember_turn", { messages: messages.slice(-6) }).catch(() => {});
+        invoke("remember_turn", {
+          messages: messages.slice(-6),
+          conversationId,
+        }).catch(() => {});
       }
     } catch (e) {
       error = String(e);
@@ -72,48 +81,56 @@
     <span class="logo">🧠 Cortex</span>
     <div class="header-actions">
       <button class="icon-btn" onclick={clearChat} title="Clear chat">🗑</button>
-      <button class="icon-btn" onclick={() => (showSettings = !showSettings)} title="Settings">
+      <button class="icon-btn" onclick={() => { showMemory = !showMemory; showTasks = false; showSettings = false; }} title="Memory">💡</button>
+      <button class="icon-btn" onclick={() => { showTasks = !showTasks; showMemory = false; showSettings = false; }} title="Tasks">✓</button>
+      <button class="icon-btn" onclick={() => { showSettings = !showSettings; showMemory = false; showTasks = false; }} title="Settings">
         ⚙
       </button>
     </div>
   </header>
 
-  {#if showSettings}
-    <Settings onClose={() => (showSettings = false)} />
-  {:else}
-    <main>
-      <div class="messages" bind:this={messagesEl}>
-        {#if messages.length === 0}
-          <div class="empty">Start a conversation</div>
-        {/if}
-        {#each messages as msg}
-          <div class="message {msg.role}">
-            <div class="bubble">{msg.content}</div>
-          </div>
-        {/each}
-        {#if loading}
-          <div class="message assistant">
-            <div class="bubble thinking">···</div>
-          </div>
-        {/if}
-      </div>
+  <div class="body">
+    {#if showSettings}
+      <Settings onClose={() => (showSettings = false)} />
+    {:else if showMemory}
+      <MemoryBrowser onClose={() => (showMemory = false)} />
+    {:else if showTasks}
+      <TaskPanel onClose={() => (showTasks = false)} />
+    {:else}
+      <main>
+        <div class="messages" bind:this={messagesEl}>
+          {#if messages.length === 0}
+            <div class="empty">Start a conversation</div>
+          {/if}
+          {#each messages as msg}
+            <div class="message {msg.role}">
+              <div class="bubble">{msg.content}</div>
+            </div>
+          {/each}
+          {#if loading}
+            <div class="message assistant">
+              <div class="bubble thinking">···</div>
+            </div>
+          {/if}
+        </div>
 
-      {#if error}
-        <div class="error-bar">{error}</div>
-      {/if}
+        {#if error}
+          <div class="error-bar">{error}</div>
+        {/if}
 
-      <div class="input-row">
-        <textarea
-          bind:value={input}
-          onkeydown={handleKey}
-          placeholder="Message… (Enter to send, Shift+Enter for newline)"
-          rows="3"
-          disabled={loading}
-        ></textarea>
-        <button onclick={send} disabled={loading || !input.trim()}>Send</button>
-      </div>
-    </main>
-  {/if}
+        <div class="input-row">
+          <textarea
+            bind:value={input}
+            onkeydown={handleKey}
+            placeholder="Message… (Enter to send, Shift+Enter for newline)"
+            rows="3"
+            disabled={loading}
+          ></textarea>
+          <button onclick={send} disabled={loading || !input.trim()}>Send</button>
+        </div>
+      </main>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -178,10 +195,16 @@
     border-color: #555;
   }
 
+  .body {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
   main {
     display: flex;
     flex-direction: column;
-    flex: 1;
+    height: 100%;
     overflow: hidden;
   }
 

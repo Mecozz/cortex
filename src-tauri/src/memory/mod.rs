@@ -1,7 +1,11 @@
 pub mod conf;
+pub mod episodic;
 pub mod health;
 pub mod instcap;
 pub mod pass1;
+pub mod pass2;
+pub mod rollext;
+pub mod scores;
 
 use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};

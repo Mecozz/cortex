@@ -10,6 +10,7 @@ use crate::{
     providers::{
         cloud::ClaudeProvider, fallback::FallbackPolicy, local::OllamaProvider, Message, Provider,
     },
+    tasks,
 };
 
 pub struct DbState(pub Mutex<Connection>);
@@ -99,17 +100,26 @@ pub async fn chat_message(
     messages: Vec<Message>,
     state: State<'_, DbState>,
 ) -> Result<crate::providers::CompletionResponse, String> {
-    // Load settings + PASS1 facts before any await (can't hold MutexGuard across await)
-    let (settings, known_facts) = {
+    let (settings, known_facts, open_tasks) = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         let s = load_settings(&conn);
         let proj_id = memory::default_project_id(&conn).unwrap_or_default();
-        let facts = memory::pass1::retrieve(&conn, &proj_id, 20)
+        let pass1 = memory::pass1::retrieve(&conn, &proj_id, 20).unwrap_or_default();
+        let facts: Vec<String> = if pass1.is_empty() {
+            memory::pass2::retrieve(&conn, &proj_id, 10)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|f| f.content)
+                .collect()
+        } else {
+            pass1.into_iter().map(|f| f.content).collect()
+        };
+        let task_list: Vec<String> = tasks::open(&conn, &proj_id, 10)
             .unwrap_or_default()
             .into_iter()
-            .map(|f| f.content)
-            .collect::<Vec<_>>();
-        (s, facts)
+            .map(|t| t.content)
+            .collect();
+        (s, facts, task_list)
     };
 
     let system = if settings.system_prompt.is_empty() {
@@ -117,8 +127,8 @@ pub async fn chat_message(
     } else {
         Some(settings.system_prompt.clone())
     };
-
-    let request = Injector::new(system).assemble(messages, settings.model.clone(), &known_facts);
+    let request =
+        Injector::new(system).assemble(messages, settings.model.clone(), &known_facts, &open_tasks);
     let policy: FallbackPolicy = settings.fallback_policy.parse().unwrap_or_default();
 
     let result = match settings.provider.as_str() {
@@ -171,33 +181,127 @@ pub async fn chat_message(
 #[tauri::command]
 pub async fn remember_turn(
     messages: Vec<Message>,
+    conversation_id: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    let (api_key, proj_id) = {
+    let (api_key, proj_id, ep_count) = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         let d = Settings::default();
         let key = get_setting(&conn, "api_key_anthropic", &d.api_key_anthropic);
         let pid = memory::default_project_id(&conn).map_err(|e| e.to_string())?;
-        (key, pid)
+        for msg in &messages {
+            let _ = memory::episodic::log(
+                &conn,
+                &pid,
+                &memory::episodic::EpisodicEntry {
+                    role: msg.role.clone(),
+                    content: msg.content.clone(),
+                    conversation_id: conversation_id.clone(),
+                },
+            );
+        }
+        let _ = memory::scores::flush_expired(&conn);
+        let count = memory::episodic::count(&conn, &pid).unwrap_or(0);
+        (key, pid, count)
     };
 
-    let extracted = memory::instcap::extract(&messages, &api_key).await;
+    let instcap_facts = memory::instcap::extract(&messages, &api_key).await;
 
-    if !extracted.is_empty() {
-        if let Ok(conn) = state.0.lock() {
-            for fact in extracted {
+    let rolled = if ep_count > 0 && ep_count % 6 == 0 {
+        memory::rollext::score(&messages, &api_key).await
+    } else {
+        vec![]
+    };
+
+    let new_tasks = tasks::extract(&messages, &api_key).await;
+
+    if let Ok(conn) = state.0.lock() {
+        for fact in &instcap_facts {
+            let _ = memory::conf::upsert(
+                &conn,
+                &memory::conf::Fact {
+                    content: fact.content.clone(),
+                    category: fact.category.clone(),
+                    confidence: fact.confidence,
+                    proj_id: proj_id.clone(),
+                },
+            );
+        }
+        for (content, score) in &rolled {
+            if *score >= 7 {
                 let _ = memory::conf::upsert(
                     &conn,
                     &memory::conf::Fact {
-                        content: fact.content,
-                        category: fact.category,
-                        confidence: fact.confidence,
+                        content: content.clone(),
+                        category: "rolled".into(),
+                        confidence: *score as f32 / 10.0,
                         proj_id: proj_id.clone(),
                     },
                 );
+            } else if *score >= 4 {
+                let _ = memory::scores::buffer(&conn, content, *score as f64, &conversation_id);
             }
+        }
+        for task in &new_tasks {
+            let _ = tasks::insert(&conn, &proj_id, task, &conversation_id);
         }
     }
 
     Ok(())
+}
+
+// ── Memory query ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct FactResult {
+    pub content: String,
+    pub category: String,
+    pub confidence: f32,
+}
+
+#[tauri::command]
+pub fn get_facts(state: State<DbState>) -> Result<Vec<FactResult>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let proj_id = memory::default_project_id(&conn).map_err(|e| e.to_string())?;
+    let facts = memory::pass1::retrieve(&conn, &proj_id, 50).map_err(|e| e.to_string())?;
+    Ok(facts
+        .into_iter()
+        .map(|f| FactResult {
+            content: f.content,
+            category: f.category,
+            confidence: f.confidence,
+        })
+        .collect())
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchResult {
+    pub role: String,
+    pub content: String,
+}
+
+#[tauri::command]
+pub fn search_memory(query: String, state: State<DbState>) -> Result<Vec<SearchResult>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let proj_id = memory::default_project_id(&conn).map_err(|e| e.to_string())?;
+    let hits = memory::episodic::search(&conn, &proj_id, &query, 20).map_err(|e| e.to_string())?;
+    Ok(hits
+        .into_iter()
+        .map(|(role, content)| SearchResult { role, content })
+        .collect())
+}
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_tasks(state: State<DbState>) -> Result<Vec<tasks::Task>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let proj_id = memory::default_project_id(&conn).map_err(|e| e.to_string())?;
+    tasks::open(&conn, &proj_id, 50).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn close_task(task_id: String, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    tasks::close(&conn, &task_id).map_err(|e| e.to_string())
 }

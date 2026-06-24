@@ -18,19 +18,20 @@ impl Injector {
         }
     }
 
-    /// Assemble a CompletionRequest. Prepends known_facts to the system prompt.
     pub fn assemble(
         &self,
         history: Vec<Message>,
         model: String,
         known_facts: &[String],
+        open_tasks: &[String],
     ) -> CompletionRequest {
         let messages = if history.len() > MAX_HISTORY_MESSAGES {
             history[history.len() - MAX_HISTORY_MESSAGES..].to_vec()
         } else {
             history
         };
-        let system_prompt = build_system_prompt(self.system_prompt.as_deref(), known_facts);
+        let system_prompt =
+            build_system_prompt(self.system_prompt.as_deref(), known_facts, open_tasks);
         CompletionRequest {
             model,
             messages,
@@ -40,20 +41,34 @@ impl Injector {
     }
 }
 
-fn build_system_prompt(base: Option<&str>, facts: &[String]) -> Option<String> {
-    if facts.is_empty() {
-        return base.map(str::to_owned);
+fn build_system_prompt(base: Option<&str>, facts: &[String], tasks: &[String]) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(sp) = base.filter(|s| !s.is_empty()) {
+        parts.push(sp.to_owned());
     }
-    let facts_block = format!(
-        "Known facts about the user:\n{}",
-        facts
-            .iter()
-            .map(|f| format!("- {f}"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-    Some(match base {
-        Some(sp) if !sp.is_empty() => format!("{sp}\n\n{facts_block}"),
-        _ => facts_block,
-    })
+    if !facts.is_empty() {
+        parts.push(format!(
+            "Known facts about the user:\n{}",
+            facts
+                .iter()
+                .map(|f| format!("- {f}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    if !tasks.is_empty() {
+        parts.push(format!(
+            "Open tasks:\n{}",
+            tasks
+                .iter()
+                .map(|t| format!("- {t}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n"))
+    }
 }
