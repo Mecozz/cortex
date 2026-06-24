@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
       - run: pnpm install
       - run: pnpm check
       - run: pnpm format:check
@@ -53,3 +54,17 @@ jobs:
       - name: Tests
         working-directory: src-tauri
         run: cargo test
+
+  rules:
+    name: Code rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SIZELIMIT — 400 lines/file
+        run: bash scripts/check_size.sh
+      - name: MODBOUND — no cross-module imports
+        run: bash scripts/check_modbound.sh
+      - name: MODCONTRACT — module has health + mod + README
+        run: bash scripts/check_modcontract.sh
+      - name: SECRETS — no hardcoded credentials
+        run: bash scripts/check_secrets.sh

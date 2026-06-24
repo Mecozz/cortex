@@ -1,0 +1,14 @@
+# Shell scripts must stay LF — CRLF breaks bash
+scripts/*.sh  text eol=lf
+
+# YAML stays LF
+*.yml         text eol=lf
+*.yaml        text eol=lf
+
+# Rust and web sources — auto-detect
+*.rs          text
+*.ts          text
+*.svelte      text
+*.json        text
+*.toml        text
+*.md          text
