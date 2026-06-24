@@ -145,7 +145,7 @@
       <label>
         API key
         <input
-          type="password"
+          type="text"
           bind:value={settings.api_key_anthropic}
           placeholder="sk-ant-api03-... or sk-ant-oat01-... (subscription)"
           autocomplete="off"
