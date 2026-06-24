@@ -24,7 +24,7 @@ impl VaultKey {
         }
         let mut key = [0u8; 32];
         OsRng.fill_bytes(&mut key);
-        std::fs::write(&key_path, &key)?;
+        std::fs::write(&key_path, key)?;
         Ok(Self(key))
     }
 }
@@ -66,7 +66,8 @@ pub fn get(conn: &Connection, vault_key: &VaultKey, key: &str) -> Option<String>
 }
 
 pub fn list(conn: &Connection) -> Result<Vec<VaultEntry>> {
-    let mut stmt = conn.prepare("SELECT key, COALESCE(description, '') FROM vault ORDER BY key")?;
+    let mut stmt =
+        conn.prepare("SELECT key, COALESCE(description, '') FROM vault ORDER BY key")?;
     let rows = stmt.query_map([], |row| {
         Ok(VaultEntry {
             key: row.get(0)?,
@@ -85,9 +86,7 @@ fn encrypt_value(vault_key: &VaultKey, plaintext: &str) -> String {
     let key = Key::<Aes256Gcm>::from_slice(&vault_key.0);
     let cipher = Aes256Gcm::new(key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext.as_bytes())
-        .unwrap_or_default();
+    let ciphertext = cipher.encrypt(&nonce, plaintext.as_bytes()).unwrap_or_default();
     let mut combined = nonce.to_vec();
     combined.extend(ciphertext);
     STANDARD.encode(&combined)
