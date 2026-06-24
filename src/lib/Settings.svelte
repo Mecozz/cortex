@@ -142,7 +142,7 @@
         <input
           type="password"
           bind:value={settings.api_key_anthropic}
-          placeholder="sk-ant-..."
+          placeholder="sk-ant-api03-... or sk-ant-oat01-... (subscription)"
           autocomplete="off"
         />
       </label>
