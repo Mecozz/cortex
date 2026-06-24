@@ -7,10 +7,11 @@ pub mod librarian;
 pub mod memory;
 pub mod providers;
 pub mod tasks;
+pub mod vault;
 pub mod watch;
 
 use crate::core::health::HealthCheck;
-use commands::{DbPath, DbState, WatchState};
+use commands::{DbPath, DbState, VaultState, WatchState};
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
@@ -23,9 +24,12 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
             let db_path = data_dir.join("cortex.db");
             let conn = db::init(&db_path).map_err(|e| e.to_string())?;
+            let vault_key =
+                vault::VaultKey::load_or_create(&data_dir).map_err(|e| e.to_string())?;
             app.manage(DbState(Mutex::new(conn)));
             app.manage(WatchState(Mutex::new(watch::CircuitBreaker::default())));
             app.manage(DbPath(db_path.clone()));
+            app.manage(VaultState(Mutex::new(vault_key)));
 
             let lib_db = db_path.clone();
             tauri::async_runtime::spawn(async move {
@@ -43,6 +47,9 @@ pub fn run() {
             commands::search_memory,
             commands::get_tasks,
             commands::close_task,
+            commands::get_vault_keys,
+            commands::set_vault_item,
+            commands::delete_vault_item,
             get_brain_status,
             run_lib_now,
         ])
@@ -123,6 +130,7 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
         inject::health::InjectHealth.health(),
         cost::health::CostHealth.health(),
         librarian::health::LibrarianHealth.health(),
+        vault::health::VaultHealth.health(),
         watch::health::WatchHealth.health(),
     ];
     let has_key = state

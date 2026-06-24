@@ -4,17 +4,16 @@
   import MemoryBrowser from "./lib/MemoryBrowser.svelte";
   import TaskPanel from "./lib/TaskPanel.svelte";
   import HealthPanel from "./lib/HealthPanel.svelte";
+  import VaultPanel from "./lib/VaultPanel.svelte";
 
   interface Message {
     role: "user" | "assistant";
     content: string;
+    provider?: string;
   }
 
   interface CompletionResponse {
     content: string;
-    input_tokens: number;
-    output_tokens: number;
-    model: string;
     provider: string;
   }
 
@@ -31,6 +30,7 @@
   let showMemory = $state(false);
   let showTasks = $state(false);
   let showHealth = $state(false);
+  let showVault = $state(false);
   let messagesEl: HTMLElement | undefined = $state();
   let brainStatus = $state("green");
 
@@ -61,13 +61,15 @@
     scrollToBottom();
 
     try {
-      const resp: CompletionResponse = await invoke("chat_message", {
-        messages: messages,
-      });
+      const wire = messages.map(({ role, content }) => ({ role, content }));
+      const resp: CompletionResponse = await invoke("chat_message", { messages: wire });
       if (resp.content) {
-        messages = [...messages, { role: "assistant", content: resp.content }];
+        messages = [
+          ...messages,
+          { role: "assistant", content: resp.content, provider: resp.provider },
+        ];
         invoke("remember_turn", {
-          messages: messages.slice(-6),
+          messages: messages.slice(-6).map(({ role, content }) => ({ role, content })),
           conversationId,
         }).catch(() => {});
       }
@@ -97,28 +99,32 @@
     error = "";
   }
 
-  function openPanel(which: "settings" | "memory" | "tasks" | "health") {
+  function openPanel(which: "settings" | "memory" | "tasks" | "health" | "vault") {
     showSettings = which === "settings";
     showMemory = which === "memory";
     showTasks = which === "tasks";
     showHealth = which === "health";
+    showVault = which === "vault";
   }
 </script>
 
 <div class="app">
   <header>
-    <span class="logo">🧠 Cortex</span>
+    <span class="logo">&#x2728; Cortex</span>
     <div class="header-actions">
       <button
         class="status-dot"
         onclick={() => openPanel("health")}
         title="Brain health"
-        style="color: {statusColor[brainStatus] ?? '#888'}">●</button
+        style="color: {statusColor[brainStatus] ?? '#888'}">&#x25CF;</button
       >
-      <button class="icon-btn" onclick={clearChat} title="Clear chat">🗑</button>
-      <button class="icon-btn" onclick={() => openPanel("memory")} title="Memory">💡</button>
-      <button class="icon-btn" onclick={() => openPanel("tasks")} title="Tasks">✓</button>
-      <button class="icon-btn" onclick={() => openPanel("settings")} title="Settings">⚙</button>
+      <button class="icon-btn" onclick={clearChat} title="Clear chat">&#x1F5D1;</button>
+      <button class="icon-btn" onclick={() => openPanel("memory")} title="Memory">&#x1F9E0;</button>
+      <button class="icon-btn" onclick={() => openPanel("tasks")} title="Tasks">&#x2713;</button>
+      <button class="icon-btn" onclick={() => openPanel("vault")} title="Vault">&#x1F511;</button>
+      <button class="icon-btn" onclick={() => openPanel("settings")} title="Settings"
+        >&#x2699;</button
+      >
     </div>
   </header>
 
@@ -131,6 +137,8 @@
       <TaskPanel onClose={() => (showTasks = false)} />
     {:else if showHealth}
       <HealthPanel onClose={() => (showHealth = false)} />
+    {:else if showVault}
+      <VaultPanel onClose={() => (showVault = false)} />
     {:else}
       <main>
         <div class="messages" bind:this={messagesEl}>
@@ -140,11 +148,14 @@
           {#each messages as msg}
             <div class="message {msg.role}">
               <div class="bubble">{msg.content}</div>
+              {#if msg.role === "assistant" && msg.provider}
+                <span class="provider-tag">{msg.provider}</span>
+              {/if}
             </div>
           {/each}
           {#if loading}
             <div class="message assistant">
-              <div class="bubble thinking">···</div>
+              <div class="bubble thinking">...</div>
             </div>
           {/if}
         </div>
@@ -157,7 +168,7 @@
           <textarea
             bind:value={input}
             onkeydown={handleKey}
-            placeholder="Message… (Enter to send, Shift+Enter for newline)"
+            placeholder="Message... (Enter to send, Shift+Enter for newline)"
             rows="3"
             disabled={loading}
           ></textarea>
@@ -276,10 +287,11 @@
 
   .message {
     display: flex;
+    flex-direction: column;
   }
 
   .message.user {
-    justify-content: flex-end;
+    align-items: flex-end;
   }
 
   .bubble {
@@ -302,6 +314,13 @@
     background: #1c1c22;
     border: 1px solid #2a2a32;
     border-bottom-left-radius: 4px;
+  }
+
+  .provider-tag {
+    font-size: 10px;
+    color: #444;
+    margin-top: 3px;
+    margin-left: 2px;
   }
 
   .thinking {

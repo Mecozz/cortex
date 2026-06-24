@@ -10,6 +10,8 @@
     system_prompt: string;
     fallback_policy: string;
     ollama_url: string;
+    privacy_mode: boolean;
+    local_only: boolean;
   }
 
   let { onClose } = $props<{ onClose: () => void }>();
@@ -22,6 +24,8 @@
     system_prompt: "",
     fallback_policy: "hard_fail",
     ollama_url: "http://localhost:11434",
+    privacy_mode: false,
+    local_only: false,
   });
 
   let saving = $state(false);
@@ -62,7 +66,7 @@
 <div class="settings">
   <div class="settings-header">
     <h2>Settings</h2>
-    <button class="close-btn" onclick={onClose}>✕</button>
+    <button class="close-btn" onclick={onClose}>&#x2715;</button>
   </div>
 
   {#if loadError}
@@ -96,7 +100,7 @@
         <input
           type="password"
           bind:value={settings.api_key_anthropic}
-          placeholder="sk-ant-…"
+          placeholder="sk-ant-..."
           autocomplete="off"
         />
       </label>
@@ -128,18 +132,30 @@
       <h3>Persona / System prompt</h3>
       <textarea
         bind:value={settings.system_prompt}
-        placeholder="Optional system prompt shown before every conversation…"
+        placeholder="Optional system prompt shown before every conversation..."
         rows="4"
       ></textarea>
+    </section>
+
+    <section>
+      <h3>Privacy</h3>
+      <label class="toggle-label">
+        <input type="checkbox" bind:checked={settings.privacy_mode} />
+        <span>Privacy mode &mdash; disable memory capture</span>
+      </label>
+      <label class="toggle-label">
+        <input type="checkbox" bind:checked={settings.local_only} />
+        <span>Local only &mdash; block all cloud providers</span>
+      </label>
     </section>
   </div>
 
   <div class="settings-footer">
     {#if saved}
-      <span class="saved-msg">Saved ✓</span>
+      <span class="saved-msg">Saved &#x2713;</span>
     {/if}
     <button onclick={save} disabled={saving}>
-      {saving ? "Saving…" : "Save"}
+      {saving ? "Saving..." : "Save"}
     </button>
   </div>
 </div>
@@ -209,6 +225,20 @@
     gap: 4px;
     font-size: 13px;
     color: #aaa;
+  }
+
+  .toggle-label {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .toggle-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #5b21b6;
+    cursor: pointer;
   }
 
   input,

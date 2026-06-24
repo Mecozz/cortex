@@ -23,6 +23,8 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 async-trait = "0.1"
 thiserror = "1"
+aes-gcm = "0.10"
+base64 = "0.22"
 
 [profile.release]
 codegen-units = 1

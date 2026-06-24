@@ -10,12 +10,13 @@ use crate::{
     providers::{
         cloud::ClaudeProvider, fallback::FallbackPolicy, local::OllamaProvider, Message, Provider,
     },
-    tasks, watch,
+    tasks, vault, watch,
 };
 
 pub struct DbState(pub Mutex<Connection>);
 pub struct WatchState(pub Mutex<watch::CircuitBreaker>);
 pub struct DbPath(pub std::path::PathBuf);
+pub struct VaultState(pub Mutex<vault::VaultKey>);
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,8 @@ pub struct Settings {
     pub system_prompt: String,
     pub fallback_policy: String,
     pub ollama_url: String,
+    pub privacy_mode: bool,
+    pub local_only: bool,
 }
 
 impl Default for Settings {
@@ -40,6 +43,8 @@ impl Default for Settings {
             system_prompt: String::new(),
             fallback_policy: "hard_fail".into(),
             ollama_url: "http://localhost:11434".into(),
+            privacy_mode: false,
+            local_only: false,
         }
     }
 }
@@ -72,6 +77,8 @@ fn load_settings(conn: &Connection) -> Settings {
         system_prompt: get_setting(conn, "system_prompt", &d.system_prompt),
         fallback_policy: get_setting(conn, "fallback_policy", &d.fallback_policy),
         ollama_url: get_setting(conn, "ollama_url", &d.ollama_url),
+        privacy_mode: get_setting(conn, "privacy_mode", "false") == "true",
+        local_only: get_setting(conn, "local_only", "false") == "true",
     }
 }
 
@@ -92,6 +99,10 @@ pub fn save_settings(settings: Settings, state: State<DbState>) -> Result<(), St
     set_setting(&conn, "system_prompt", &settings.system_prompt).map_err(|e| e.to_string())?;
     set_setting(&conn, "fallback_policy", &settings.fallback_policy).map_err(|e| e.to_string())?;
     set_setting(&conn, "ollama_url", &settings.ollama_url).map_err(|e| e.to_string())?;
+    let pv = settings.privacy_mode.to_string();
+    set_setting(&conn, "privacy_mode", &pv).map_err(|e| e.to_string())?;
+    let lv = settings.local_only.to_string();
+    set_setting(&conn, "local_only", &lv).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -102,11 +113,19 @@ pub async fn chat_message(
     messages: Vec<Message>,
     state: State<'_, DbState>,
     watch: State<'_, WatchState>,
+    vault_state: State<'_, VaultState>,
 ) -> Result<crate::providers::CompletionResponse, String> {
-    // DEGRADE: if DB unavailable, use defaults (amnesiac mode)
     let (settings, known_facts, open_tasks) = match state.0.lock() {
         Ok(conn) => {
-            let s = load_settings(&conn);
+            let mut s = load_settings(&conn);
+            // VAULT → INJECT: use vault API key if settings key is empty
+            if s.api_key_anthropic.is_empty() {
+                if let Ok(vk) = vault_state.0.lock() {
+                    if let Some(key) = vault::get(&conn, &vk, "api_key_anthropic") {
+                        s.api_key_anthropic = key;
+                    }
+                }
+            }
             let proj_id = memory::default_project_id(&conn).unwrap_or_default();
             let pass1 = memory::pass1::retrieve(&conn, &proj_id, 20).unwrap_or_default();
             let facts: Vec<String> = if pass1.is_empty() {
@@ -128,6 +147,11 @@ pub async fn chat_message(
         Err(_) => (Settings::default(), vec![], vec![]),
     };
 
+    // LOCALONLY: block cloud providers when enabled
+    if settings.local_only && settings.provider != "ollama" {
+        return Err("Local-only mode is enabled. Switch provider to Ollama.".into());
+    }
+
     // Circuit breaker: block disabled providers
     if watch
         .0
@@ -136,7 +160,7 @@ pub async fn chat_message(
         .unwrap_or(false)
     {
         return Err(format!(
-            "Provider '{}' is temporarily disabled (circuit breaker). Try again later.",
+            "Provider '{}' is temporarily disabled (circuit breaker).",
             settings.provider
         ));
     }
@@ -211,10 +235,14 @@ pub async fn remember_turn(
     conversation_id: String,
     state: State<'_, DbState>,
 ) -> Result<(), String> {
-    let (api_key, proj_id, ep_count) = {
+    let (api_key, proj_id, ep_count, privacy) = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         let d = Settings::default();
         let key = get_setting(&conn, "api_key_anthropic", &d.api_key_anthropic);
+        let priv_mode = get_setting(&conn, "privacy_mode", "false") == "true";
+        if priv_mode {
+            return Ok(());
+        }
         let pid = memory::default_project_id(&conn).map_err(|e| e.to_string())?;
         for msg in &messages {
             let _ = memory::episodic::log(
@@ -229,8 +257,9 @@ pub async fn remember_turn(
         }
         let _ = memory::scores::flush_expired(&conn);
         let count = memory::episodic::count(&conn, &pid).unwrap_or(0);
-        (key, pid, count)
+        (key, pid, count, priv_mode)
     };
+    let _ = privacy;
 
     let instcap_facts = memory::instcap::extract(&messages, &api_key).await;
 
@@ -331,4 +360,32 @@ pub fn get_tasks(state: State<DbState>) -> Result<Vec<tasks::Task>, String> {
 pub fn close_task(task_id: String, state: State<DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     tasks::close(&conn, &task_id).map_err(|e| e.to_string())
+}
+
+// ── Vault ─────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_vault_keys(state: State<DbState>) -> Result<Vec<vault::VaultEntry>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    vault::list(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_vault_item(
+    key: String,
+    value: String,
+    description: String,
+    state: State<DbState>,
+    vault_state: State<VaultState>,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let vk = vault_state.0.lock().map_err(|e| e.to_string())?;
+    let desc = (!description.is_empty()).then_some(description.as_str());
+    vault::set(&conn, &vk, &key, &value, desc).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_vault_item(key: String, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    vault::delete(&conn, &key).map_err(|e| e.to_string())
 }
