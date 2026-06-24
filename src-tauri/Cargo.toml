@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "cortex"
 version = "0.1.0"
 description = "Universal AI Desktop Client"
@@ -17,6 +17,9 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["sync"] }
 
 [profile.release]
 codegen-units = 1

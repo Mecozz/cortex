@@ -1,12 +1,17 @@
-﻿{
+{
   "name": "cortex",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "lint": "eslint src --ext .ts,.svelte",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -15,6 +20,12 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4",
     "@tauri-apps/cli": "^2",
+    "@typescript-eslint/eslint-plugin": "^7",
+    "@typescript-eslint/parser": "^7",
+    "eslint": "^8",
+    "eslint-plugin-svelte": "^2",
+    "prettier": "^3",
+    "prettier-plugin-svelte": "^3",
     "svelte": "^5",
     "svelte-check": "^4",
     "typescript": "^5",
