@@ -4,16 +4,15 @@ use std::sync::Mutex;
 use tauri::State;
 
 use crate::{
+    core::types::{CompletionResponse, Message, Provider, ProviderError},
     cost::{self, UsageEntry},
     inject::Injector,
-    providers::{
-        cloud::ClaudeProvider, fallback::FallbackPolicy, local::OllamaProvider, Message, Provider,
-    },
+    providers::{cloud::ClaudeProvider, fallback::FallbackPolicy, local::OllamaProvider},
 };
 
 pub struct DbState(pub Mutex<Connection>);
 
-// ── Settings ─────────────────────────────────────────────────────────────────
+// ── Settings ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -78,24 +77,22 @@ pub fn save_settings(settings: Settings, state: State<DbState>) -> Result<(), St
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     set_setting(&conn, "api_key_anthropic", &settings.api_key_anthropic)
         .map_err(|e| e.to_string())?;
-    set_setting(&conn, "api_key_openai", &settings.api_key_openai)
-        .map_err(|e| e.to_string())?;
+    set_setting(&conn, "api_key_openai", &settings.api_key_openai).map_err(|e| e.to_string())?;
     set_setting(&conn, "provider", &settings.provider).map_err(|e| e.to_string())?;
     set_setting(&conn, "model", &settings.model).map_err(|e| e.to_string())?;
     set_setting(&conn, "system_prompt", &settings.system_prompt).map_err(|e| e.to_string())?;
-    set_setting(&conn, "fallback_policy", &settings.fallback_policy)
-        .map_err(|e| e.to_string())?;
+    set_setting(&conn, "fallback_policy", &settings.fallback_policy).map_err(|e| e.to_string())?;
     set_setting(&conn, "ollama_url", &settings.ollama_url).map_err(|e| e.to_string())?;
     Ok(())
 }
 
-// ── Chat ─────────────────────────────────────────────────────────────────────
+// ── Chat ──────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn chat_message(
     messages: Vec<Message>,
     state: State<'_, DbState>,
-) -> Result<crate::providers::CompletionResponse, String> {
+) -> Result<CompletionResponse, String> {
     let settings = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
         let d = Settings::default();
@@ -121,17 +118,16 @@ pub async fn chat_message(
 
     let policy = FallbackPolicy::from_str(&settings.fallback_policy);
 
-    let result: Result<crate::providers::CompletionResponse, crate::providers::ProviderError> =
-        match settings.provider.as_str() {
-            "ollama" => {
-                let p = OllamaProvider::new(settings.ollama_url.clone());
-                p.complete(request).await
-            }
-            _ => {
-                let p = ClaudeProvider::new(settings.api_key_anthropic.clone());
-                p.complete(request).await
-            }
-        };
+    let result: Result<CompletionResponse, ProviderError> = match settings.provider.as_str() {
+        "ollama" => {
+            let p = OllamaProvider::new(settings.ollama_url.clone());
+            p.complete(request).await
+        }
+        _ => {
+            let p = ClaudeProvider::new(settings.api_key_anthropic.clone());
+            p.complete(request).await
+        }
+    };
 
     match result {
         Ok(resp) => {
@@ -153,7 +149,7 @@ pub async fn chat_message(
             Ok(resp)
         }
         Err(e) => match policy {
-            FallbackPolicy::Silent => Ok(crate::providers::CompletionResponse {
+            FallbackPolicy::Silent => Ok(CompletionResponse {
                 content: String::new(),
                 input_tokens: 0,
                 output_tokens: 0,

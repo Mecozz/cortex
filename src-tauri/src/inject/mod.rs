@@ -1,6 +1,6 @@
 pub mod health;
 
-use crate::providers::{CompletionRequest, Message};
+use crate::core::types::{CompletionRequest, Message};
 
 /// Token budget fractions (Phase 1: history only, no memory yet).
 const MAX_HISTORY_MESSAGES: usize = 20;
