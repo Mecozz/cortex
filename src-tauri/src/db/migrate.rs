@@ -6,10 +6,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "001",
         include_str!("../../migrations/001_initial_schema.sql"),
     ),
-    (
-        "002",
-        include_str!("../../migrations/002_settings.sql"),
-    ),
+    ("002", include_str!("../../migrations/002_settings.sql")),
 ];
 
 pub fn run(conn: &Connection) -> rusqlite::Result<()> {

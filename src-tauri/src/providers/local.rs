@@ -65,8 +65,11 @@ impl Provider for OllamaProvider {
         &self,
         request: CompletionRequest,
     ) -> Result<CompletionResponse, ProviderError> {
-        let mut messages: Vec<OllamaMessage> =
-            request.messages.into_iter().map(OllamaMessage::from).collect();
+        let mut messages: Vec<OllamaMessage> = request
+            .messages
+            .into_iter()
+            .map(OllamaMessage::from)
+            .collect();
 
         if let Some(system) = request.system_prompt {
             messages.insert(
