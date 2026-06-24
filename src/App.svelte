@@ -81,9 +81,33 @@
     <span class="logo">🧠 Cortex</span>
     <div class="header-actions">
       <button class="icon-btn" onclick={clearChat} title="Clear chat">🗑</button>
-      <button class="icon-btn" onclick={() => { showMemory = !showMemory; showTasks = false; showSettings = false; }} title="Memory">💡</button>
-      <button class="icon-btn" onclick={() => { showTasks = !showTasks; showMemory = false; showSettings = false; }} title="Tasks">✓</button>
-      <button class="icon-btn" onclick={() => { showSettings = !showSettings; showMemory = false; showTasks = false; }} title="Settings">
+      <button
+        class="icon-btn"
+        onclick={() => {
+          showMemory = !showMemory;
+          showTasks = false;
+          showSettings = false;
+        }}
+        title="Memory">💡</button
+      >
+      <button
+        class="icon-btn"
+        onclick={() => {
+          showTasks = !showTasks;
+          showMemory = false;
+          showSettings = false;
+        }}
+        title="Tasks">✓</button
+      >
+      <button
+        class="icon-btn"
+        onclick={() => {
+          showSettings = !showSettings;
+          showMemory = false;
+          showTasks = false;
+        }}
+        title="Settings"
+      >
         ⚙
       </button>
     </div>

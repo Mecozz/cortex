@@ -46,7 +46,14 @@
   </div>
 
   <div class="tabs">
-    <button class="tab" class:active={tab === "facts"} onclick={() => { tab = "facts"; loadFacts(); }}>
+    <button
+      class="tab"
+      class:active={tab === "facts"}
+      onclick={() => {
+        tab = "facts";
+        loadFacts();
+      }}
+    >
       Facts
     </button>
     <button class="tab" class:active={tab === "search"} onclick={() => (tab = "search")}>
