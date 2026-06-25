@@ -41,8 +41,6 @@
     "claude-opus-4-8",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
-    "claude-opus-4-7",
-    "claude-opus-4-6",
   ];
 
   const ollamaModels = ["llama3.2", "llama3.1", "mistral", "phi3", "gemma2"];
@@ -87,7 +85,7 @@
     syncing = true;
     syncMsg = "";
     invoke("sync_import", { syncFolder: settings.sync_folder })
-      .then(() => (syncMsg = "Import queued — restart to apply."))
+      .then(() => (syncMsg = "Import queued ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â restart to apply."))
       .catch((e) => (syncMsg = String(e)))
       .finally(() => {
         syncing = false;
@@ -104,10 +102,8 @@
         checking = false;
       });
   }
-  const importFromClaude = () =>
-    invoke<string>("read_claude_credentials")
-      .then((t) => (settings.api_key_anthropic = t))
-      .catch((e) => (loadError = String(e)));
+  let oauthLoading = $state(false);
+  const oauthLogin = () => { oauthLoading = true; invoke<string>("oauth_login").then((t) => { settings.api_key_anthropic = t; oauthLoading = false; }).catch((e) => { loadError = String(e); oauthLoading = false; }); };
 </script>
 
 <div class="settings">
@@ -151,7 +147,7 @@
           autocomplete="off"
         />
       </label>
-      <button type="button" onclick={oauthLogin}>Connect Claude.ai</button>
+      <button type="button" onclick={oauthLogin} disabled={oauthLoading}>{oauthLoading ? "Opening browser..." : "Connect Claude.ai"}</button>
       <label>
         Model
         <select bind:value={settings.model}>
