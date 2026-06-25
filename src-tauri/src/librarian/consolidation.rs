@@ -9,7 +9,6 @@
 //! Keeping them separate stops a non-Send `&Connection` from being held across
 //! an `.await`, so the whole cycle stays spawnable on the Tokio runtime.
 
-use reqwest::Client;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -36,38 +35,10 @@ fn snippet(messages: &[Message], n: usize) -> String {
         .join("\n")
 }
 
-/// One Claude Haiku call returning the assistant text, or None on any failure.
+/// One Haiku call (Anthropic API if a key is set, else the subscription),
+/// returning the assistant text or None.
 async fn haiku_json(api_key: &str, system: &str, user: &str, max_tokens: u32) -> Option<String> {
-    if api_key.is_empty() || user.trim().is_empty() {
-        return None;
-    }
-    let body = serde_json::json!({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": [{"role": "user", "content": user}]
-    });
-    let resp = Client::new()
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body)
-        .send()
-        .await
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    #[derive(Deserialize)]
-    struct Block {
-        text: String,
-    }
-    #[derive(Deserialize)]
-    struct Resp {
-        content: Vec<Block>,
-    }
-    let parsed: Resp = resp.json().await.ok()?;
-    Some(parsed.content.into_iter().map(|c| c.text).collect())
+    crate::core::llm::haiku(api_key, system, user, max_tokens).await
 }
 
 // ── Relationships ────────────────────────────────────────────────────────────
@@ -100,7 +71,7 @@ pub async fn extract_relationship_triples(messages: &[Message], api_key: &str) -
         Some(t) => t,
         None => return vec![],
     };
-    serde_json::from_str::<Vec<RawTriple>>(&raw)
+    serde_json::from_str::<Vec<RawTriple>>(crate::core::llm::json_slice(&raw))
         .unwrap_or_default()
         .into_iter()
         .filter(|t| !t.subject.trim().is_empty() && !t.object.trim().is_empty())
@@ -253,7 +224,7 @@ pub async fn summarize_one(messages: &[Message], api_key: &str) -> (String, Stri
         Some(t) => t,
         None => return (String::new(), String::new()),
     };
-    let s: RawSummary = serde_json::from_str(&raw).unwrap_or(RawSummary {
+    let s: RawSummary = serde_json::from_str(crate::core::llm::json_slice(&raw)).unwrap_or(RawSummary {
         title: String::new(),
         summary: String::new(),
     });

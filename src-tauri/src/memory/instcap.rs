@@ -1,4 +1,3 @@
-use reqwest::Client;
 use serde::Deserialize;
 
 use crate::core::types::Message;
@@ -27,12 +26,12 @@ fn default_confidence() -> f32 {
 
 const EXTRACT_SYSTEM: &str = "Extract personal facts the user has stated about themselves. Focus on identity (name, age, location, job, family), preferences (likes, dislikes, habits), and explicit declarations (\"remember that...\", \"I want you to know...\"). Return ONLY a JSON array: [{\"content\": \"User's name is Alice\", \"category\": \"identity|preference|declaration|other\", \"confidence\": 0.95}]. Return [] if nothing memorable. No other text.";
 
-/// INSTCAP — extract memorable facts from a conversation snippet using Claude Haiku.
+/// INSTCAP — extract memorable facts from a conversation snippet. Uses the
+/// Anthropic API if an API key is set, else the Claude Code subscription.
 pub async fn extract(messages: &[Message], api_key: &str) -> Vec<ExtractedFact> {
-    if api_key.is_empty() || messages.is_empty() {
+    if messages.is_empty() {
         return vec![];
     }
-
     let snippet = messages
         .iter()
         .rev()
@@ -42,49 +41,12 @@ pub async fn extract(messages: &[Message], api_key: &str) -> Vec<ExtractedFact> 
         .collect::<Vec<_>>()
         .join("\n");
 
-    let body = serde_json::json!({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 512,
-        "system": EXTRACT_SYSTEM,
-        "messages": [{"role": "user", "content": snippet}]
-    });
-
-    let resp = match Client::new()
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(_) => return vec![],
+    let text = match crate::core::llm::haiku(api_key, EXTRACT_SYSTEM, &snippet, 512).await {
+        Some(t) => t,
+        None => return vec![],
     };
-
-    if !resp.status().is_success() {
-        return vec![];
-    }
-
-    #[derive(Deserialize)]
-    struct ContentBlock {
-        text: String,
-    }
-    #[derive(Deserialize)]
-    struct ApiResp {
-        content: Vec<ContentBlock>,
-    }
-
-    let parsed: ApiResp = match resp.json().await {
-        Ok(p) => p,
-        Err(_) => return vec![],
-    };
-
-    let text = parsed
-        .content
-        .into_iter()
-        .map(|c| c.text)
-        .collect::<String>();
-    let raw: Vec<RawFact> = serde_json::from_str(&text).unwrap_or_default();
+    let raw: Vec<RawFact> =
+        serde_json::from_str(crate::core::llm::json_slice(&text)).unwrap_or_default();
 
     raw.into_iter()
         .filter(|f| !f.content.is_empty())

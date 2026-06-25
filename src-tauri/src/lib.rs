@@ -132,9 +132,8 @@ pub async fn run_lib_cycle(db_path: &std::path::Path) {
             |row| row.get::<_, String>(0),
         )
         .unwrap_or_default();
-    if api_key.is_empty() {
-        return;
-    }
+    // No early-return on empty api_key: the capture/consolidation helpers fall
+    // back to the Claude Code subscription, so the cycle runs on either auth.
     let proj_id = match memory::default_project_id(&conn) {
         Ok(id) => id,
         Err(_) => return,

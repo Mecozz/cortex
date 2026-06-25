@@ -62,8 +62,10 @@ const TASKEXT_SYSTEM: &str = "You are a task extraction engine. \
 Given conversation messages, extract any actionable tasks, goals, or todos mentioned by the user. \
 Return a JSON array of strings, one task per entry. Return [] if no tasks found.";
 
+/// Extract actionable tasks. Uses the Anthropic API if an API key is set, else
+/// the Claude Code subscription.
 pub async fn extract(messages: &[Message], api_key: &str) -> Vec<String> {
-    if api_key.is_empty() {
+    if messages.is_empty() {
         return vec![];
     }
     let history = messages
@@ -71,36 +73,11 @@ pub async fn extract(messages: &[Message], api_key: &str) -> Vec<String> {
         .map(|m| format!("{}: {}", m.role, m.content))
         .collect::<Vec<_>>()
         .join("\n");
-    let body = serde_json::json!({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 512,
-        "system": TASKEXT_SYSTEM,
-        "messages": [{"role": "user", "content": history}]
-    });
-    let client = reqwest::Client::new();
-    let resp = match client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(_) => return vec![],
+    let text = match crate::core::llm::haiku(api_key, TASKEXT_SYSTEM, &history, 512).await {
+        Some(t) => t,
+        None => return vec![],
     };
-    let json: serde_json::Value = match resp.json().await {
-        Ok(j) => j,
-        Err(_) => return vec![],
-    };
-    let text = json["content"][0]["text"].as_str().unwrap_or("");
-    let cleaned = text
-        .trim()
-        .trim_start_matches("```json")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim();
-    serde_json::from_str(cleaned).unwrap_or_default()
+    serde_json::from_str(crate::core::llm::json_slice(&text)).unwrap_or_default()
 }
 
 fn now_secs() -> i64 {
