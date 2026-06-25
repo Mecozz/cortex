@@ -186,44 +186,61 @@ pub async fn run_lib_cycle(db_path: &std::path::Path) {
 }
 
 #[tauri::command]
-fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> watch::BrainStatus {
+fn get_brain_status(
+    state: State<DbState>,
+    watch_state: State<WatchState>,
+    db_path: State<DbPath>,
+) -> watch::BrainStatus {
     let cb = watch_state.0.lock().ok();
-    let mut reports = vec![
-        memory::health::MemoryHealth.health(),
-        tasks::health::TaskHealth.health(),
-        inject::health::InjectHealth.health(),
-        cost::health::CostHealth.health(),
-        librarian::health::LibrarianHealth.health(),
-        vault::health::VaultHealth.health(),
-        backup::health::BackupHealth.health(),
-        sync::health::SyncHealth.health(),
-        tools::health::ToolsHealth.health(),
-        telegram::health::TelegramHealth.health(),
-        portability::health::PortabilityHealth.health(),
-        portability::health::PortabilityHealth.health(),
-        watch::health::WatchHealth.health(),
-    ];
-    let has_key = state
+
+    // Live metrics for the data-driven modules.
+    let (facts, episodic, has_key) = state
         .0
         .lock()
         .map(|conn| {
-            !conn
+            let facts = conn
+                .query_row("SELECT COUNT(*) FROM facts WHERE is_current = 1", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .unwrap_or(0);
+            let episodic = conn
+                .query_row("SELECT COUNT(*) FROM episodic", [], |r| r.get::<_, i64>(0))
+                .unwrap_or(0);
+            let has_key = !conn
                 .query_row(
                     "SELECT value FROM settings WHERE key = 'api_key_anthropic'",
                     [],
                     |r| r.get::<_, String>(0),
                 )
                 .unwrap_or_default()
-                .is_empty()
+                .is_empty();
+            (facts, episodic, has_key)
         })
-        .unwrap_or(false);
-    reports.push(
+        .unwrap_or((0, 0, false));
+    let backup_count = backup::list(db_path.0.parent().unwrap_or(&db_path.0)).len();
+
+    let reports = vec![
+        memory::health::MemoryHealth { facts, episodic }.health(),
+        tasks::health::TaskHealth.health(),
+        inject::health::InjectHealth.health(),
+        cost::health::CostHealth.health(),
+        librarian::health::LibrarianHealth.health(),
+        vault::health::VaultHealth.health(),
+        backup::health::BackupHealth {
+            count: backup_count,
+        }
+        .health(),
+        sync::health::SyncHealth.health(),
+        tools::health::ToolsHealth.health(),
+        telegram::health::TelegramHealth.health(),
+        portability::health::PortabilityHealth.health(),
+        watch::health::WatchHealth.health(),
         providers::health::ProvidersHealth {
             cloud_available: has_key,
             local_available: true,
         }
         .health(),
-    );
+    ];
     let modules: Vec<watch::ModuleHealth> = reports
         .into_iter()
         .map(|r| {
@@ -232,9 +249,19 @@ fn get_brain_status(state: State<DbState>, watch_state: State<WatchState>) -> wa
                 .as_ref()
                 .map(|c| c.is_disabled(&r.module))
                 .unwrap_or(false);
+            // Overlay circuit-breaker state: a disabled module is red; one with
+            // recent failures drops an otherwise-green module to yellow.
+            let base = format!("{:?}", r.status).to_lowercase();
+            let status = if disabled {
+                "red".to_string()
+            } else if failures > 0 && base == "green" {
+                "yellow".to_string()
+            } else {
+                base
+            };
             watch::ModuleHealth {
                 module: r.module,
-                status: format!("{:?}", r.status).to_lowercase(),
+                status,
                 message: r.message,
                 failures,
                 disabled,
