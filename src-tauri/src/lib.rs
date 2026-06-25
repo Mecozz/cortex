@@ -27,6 +27,23 @@ fn clear_claude_session(s: tauri::State<'_, commands::ClaudeSessionState>) -> Re
     Ok(())
 }
 
+/// Kill the in-flight `claude` subprocess (and its child tree). No-op if idle.
+#[tauri::command]
+fn stop_chat(abort: tauri::State<'_, commands::AbortState>) -> Result<(), String> {
+    let pid = abort.0.lock().map_err(|e| e.to_string())?.take();
+    if let Some(pid) = pid {
+        #[cfg(target_os = "windows")]
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output();
+        #[cfg(not(target_os = "windows"))]
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .output();
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -44,6 +61,7 @@ pub fn run() {
             app.manage(DbPath(db_path.clone()));
             app.manage(VaultState(Mutex::new(vault_key)));
             app.manage(commands::ClaudeSessionState(Mutex::new(None)));
+            app.manage(commands::AbortState(Mutex::new(None)));
             let lib_db = db_path.clone();
             tauri::async_runtime::spawn(async move {
                 lib_background_task(lib_db).await;
@@ -85,6 +103,7 @@ pub fn run() {
             read_claude_credentials,
             import_data,
             clear_claude_session,
+            stop_chat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -142,6 +161,17 @@ pub async fn run_lib_cycle(db_path: &std::path::Path) {
             );
         }
     }
+
+    // REM cycle: consolidate episodic chatter into durable knowledge.
+    // (LLM steps take plain data; DB steps are sync — keeps this future Send.)
+    let triples = librarian::consolidation::extract_relationship_triples(&msgs, &api_key).await;
+    librarian::consolidation::store_relationships(&conn, &triples, "lib_cycle");
+    librarian::consolidation::decay_facts(&conn);
+    for cand in librarian::consolidation::conversations_needing_summary(&conn, &proj_id, 5) {
+        let (title, summary) = librarian::consolidation::summarize_one(&cand.messages, &api_key).await;
+        librarian::consolidation::store_convo(&conn, &cand, &proj_id, &title, &summary);
+    }
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

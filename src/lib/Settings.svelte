@@ -14,6 +14,8 @@
     local_only: boolean;
     sync_folder: string;
     tool_review: string;
+    claude_access: string;
+    claude_workdir: string;
   }
 
   let { onClose } = $props<{ onClose: () => void }>();
@@ -30,6 +32,8 @@
     local_only: false,
     sync_folder: "",
     tool_review: "auto",
+    claude_access: "chat",
+    claude_workdir: "",
   });
 
   let saving = $state(false);
@@ -163,6 +167,32 @@
           {/if}
         </select>
       </label>
+    </section>
+
+    <section>
+      <h3>Agent Access</h3>
+      <label>
+        Claude Code access level
+        <select bind:value={settings.claude_access}>
+          <option value="chat">Chat only &#x2014; read-only, sandboxed (safe default)</option>
+          <option value="full">Full access &#x2014; read/edit files + run commands</option>
+        </select>
+      </label>
+      {#if settings.claude_access === "full"}
+        <p class="warn">
+          &#x26A0; Full access lets Claude read, edit, and delete files and run
+          commands in the working directory below. Only enable on a machine you
+          control.
+        </p>
+        <label>
+          Working directory (blank = your home folder)
+          <input
+            type="text"
+            bind:value={settings.claude_workdir}
+            placeholder="C:\Users\you  (blank = home; use a drive root for whole-PC access)"
+          />
+        </label>
+      {/if}
     </section>
 
     <section>
@@ -393,5 +423,15 @@
   .smsg {
     font-size: 12px;
     color: #aaa;
+  }
+
+  .warn {
+    font-size: 12px;
+    color: #fbbf24;
+    background: #2a1f05;
+    border: 1px solid #5c4708;
+    border-radius: 6px;
+    padding: 8px 10px;
+    line-height: 1.4;
   }
 </style>

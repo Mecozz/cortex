@@ -9,9 +9,16 @@
   import VaultPanel from "./lib/VaultPanel.svelte";
 
   interface Message {
+    id: string;
     role: "user" | "assistant";
     content: string;
     provider?: string;
+    status?: "queued" | "sending" | "done" | "canceled" | "stopped";
+  }
+
+  interface QueueItem {
+    id: string;
+    text: string;
   }
 
   interface CompletionResponse {
@@ -27,6 +34,9 @@
   let messages: Message[] = $state([]);
   let input = $state("");
   let loading = $state(false);
+  let processing = $state(false);
+  let stopped = $state(false);
+  let queue: QueueItem[] = $state([]);
   let error = $state("");
   let activePanel = $state("");
   let messagesEl: HTMLElement | undefined = $state();
@@ -50,35 +60,89 @@
   refreshStatus();
   setInterval(refreshStatus, 30_000);
 
-  async function send() {
-    const text = input.trim();
-    if (!text || loading) return;
+  function setStatus(id: string, status: Message["status"]) {
+    messages = messages.map((m) => (m.id === id ? { ...m, status } : m));
+  }
 
+  // Enqueue a message. Input is never locked — you can keep typing/sending
+  // while a reply is generating; extra messages wait in the queue.
+  function send() {
+    const text = input.trim();
+    if (!text) return;
     input = "";
     error = "";
-    messages = [...messages, { role: "user", content: text }];
+    const id = crypto.randomUUID();
+    messages = [
+      ...messages,
+      { id, role: "user", content: text, status: processing ? "queued" : "sending" },
+    ];
+    queue = [...queue, { id, text }];
+    scrollToBottom();
+    drain();
+  }
+
+  // Process the queue one item at a time (claude --resume keeps context, so we
+  // only send the latest user message per turn).
+  async function drain() {
+    if (processing) return;
+    const item = queue[0];
+    if (!item) return;
+
+    processing = true;
+    stopped = false;
+    setStatus(item.id, "sending");
     loading = true;
     scrollToBottom();
 
     try {
-      const wire = messages.map(({ role, content }) => ({ role, content }));
-      const resp: CompletionResponse = await invoke("chat_message", { messages: wire });
-      if (resp.content) {
+      const resp: CompletionResponse = await invoke("chat_message", {
+        messages: [{ role: "user", content: item.text }],
+      });
+      if (!stopped && resp.content) {
         messages = [
           ...messages,
-          { role: "assistant", content: resp.content, provider: resp.provider },
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: resp.content,
+            provider: resp.provider,
+            status: "done",
+          },
         ];
         invoke("remember_turn", {
-          messages: messages.slice(-6).map(({ role, content }) => ({ role, content })),
+          messages: [
+            { role: "user", content: item.text },
+            { role: "assistant", content: resp.content },
+          ],
           conversationId,
         }).catch(() => {});
+      } else if (stopped) {
+        setStatus(item.id, "stopped");
       }
     } catch (e) {
-      error = String(e);
+      if (stopped) setStatus(item.id, "stopped");
+      else error = String(e);
     } finally {
       loading = false;
+      processing = false;
+      stopped = false;
+      queue = queue.filter((q) => q.id !== item.id);
       scrollToBottom();
+      if (queue.length) drain();
     }
+  }
+
+  // Stop the currently-generating reply (kills the claude process). Queued
+  // messages after it still run — cancel them individually if you don't want them.
+  function stop() {
+    stopped = true;
+    invoke("stop_chat").catch(() => {});
+  }
+
+  // Remove a still-waiting message from the queue before it runs.
+  function cancelQueued(id: string) {
+    queue = queue.filter((q) => q.id !== id);
+    setStatus(id, "canceled");
   }
 
   function scrollToBottom() {
@@ -96,7 +160,9 @@
 
   function clearChat() {
     messages = [];
+    queue = [];
     error = "";
+    stopped = false;
     invoke("clear_claude_session").catch(() => {});
   }
 </script>
@@ -142,10 +208,19 @@
           {#if messages.length === 0}
             <div class="empty">Start a conversation</div>
           {/if}
-          {#each messages as msg}
-            <div class="message {msg.role}">
+          {#each messages as msg (msg.id)}
+            <div class="message {msg.role}" class:dim={msg.status === "canceled"}>
               <div class="bubble">{msg.content}</div>
-              {#if msg.role === "assistant" && msg.provider}
+              {#if msg.role === "user" && msg.status === "queued"}
+                <span class="tag"
+                  >&#x23F3; queued &middot;
+                  <button class="cancel" onclick={() => cancelQueued(msg.id)}>cancel</button>
+                </span>
+              {:else if msg.status === "canceled"}
+                <span class="tag">canceled</span>
+              {:else if msg.status === "stopped"}
+                <span class="tag">&#x23F9; stopped</span>
+              {:else if msg.role === "assistant" && msg.provider}
                 <span class="provider-tag">{msg.provider}</span>
               {/if}
             </div>
@@ -167,9 +242,11 @@
             onkeydown={handleKey}
             placeholder="Message... (Enter to send, Shift+Enter for newline)"
             rows="3"
-            disabled={loading}
           ></textarea>
-          <button onclick={send} disabled={loading || !input.trim()}>Send</button>
+          {#if processing}
+            <button class="stop-btn" onclick={stop}>&#x23F9; Stop</button>
+          {/if}
+          <button onclick={send} disabled={!input.trim()}>Send</button>
         </div>
       </main>
     {/if}
@@ -255,6 +332,9 @@
 
   .body {
     flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     position: relative;
   }
@@ -318,6 +398,46 @@
     color: #444;
     margin-top: 3px;
     margin-left: 2px;
+  }
+
+  .tag {
+    font-size: 11px;
+    color: #888;
+    margin-top: 3px;
+    margin-right: 2px;
+  }
+
+  .message.user .tag {
+    align-self: flex-end;
+  }
+
+  .message.dim .bubble {
+    opacity: 0.45;
+    text-decoration: line-through;
+  }
+
+  button.cancel {
+    background: none;
+    border: none;
+    color: #f87171;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0;
+    text-decoration: underline;
+  }
+
+  button.stop-btn {
+    background: #7f1d1d;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 16px;
+  }
+
+  button.stop-btn:hover {
+    background: #991b1b;
   }
 
   .thinking {

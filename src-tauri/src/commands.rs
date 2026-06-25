@@ -18,6 +18,9 @@ pub struct WatchState(pub Mutex<watch::CircuitBreaker>);
 pub struct DbPath(pub std::path::PathBuf);
 pub struct VaultState(pub Mutex<vault::VaultKey>);
 pub struct ClaudeSessionState(pub Mutex<Option<String>>);
+/// PID of the in-flight `claude` subprocess (None when idle). Set by the
+/// claudecode provider on spawn, cleared on completion, read by `stop_chat`.
+pub struct AbortState(pub Mutex<Option<u32>>);
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +37,10 @@ pub struct Settings {
     pub local_only: bool,
     pub sync_folder: String,
     pub tool_review: String,
+    // Claude Code provider access level: "chat" (read-only sandbox, default) or
+    // "full" (--dangerously-skip-permissions in claude_workdir = full agent).
+    pub claude_access: String,
+    pub claude_workdir: String,
 }
 
 impl Default for Settings {
@@ -50,6 +57,8 @@ impl Default for Settings {
             local_only: false,
             sync_folder: String::new(),
             tool_review: "auto".into(),
+            claude_access: "chat".into(),
+            claude_workdir: String::new(),
         }
     }
 }
@@ -86,6 +95,8 @@ fn load_settings(conn: &Connection) -> Settings {
         local_only: get_setting(conn, "local_only", "false") == "true",
         sync_folder: get_setting(conn, "sync_folder", ""),
         tool_review: get_setting(conn, "tool_review", "auto"),
+        claude_access: get_setting(conn, "claude_access", "chat"),
+        claude_workdir: get_setting(conn, "claude_workdir", ""),
     }
 }
 
@@ -112,6 +123,8 @@ pub fn save_settings(settings: Settings, state: State<DbState>) -> Result<(), St
     set_setting(&conn, "local_only", &lv).map_err(|e| e.to_string())?;
     set_setting(&conn, "sync_folder", &settings.sync_folder).map_err(|e| e.to_string())?;
     set_setting(&conn, "tool_review", &settings.tool_review).map_err(|e| e.to_string())?;
+    set_setting(&conn, "claude_access", &settings.claude_access).map_err(|e| e.to_string())?;
+    set_setting(&conn, "claude_workdir", &settings.claude_workdir).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -124,6 +137,7 @@ pub async fn chat_message(
     watch: State<'_, WatchState>,
     vault_state: State<'_, VaultState>,
     session: State<'_, ClaudeSessionState>,
+    abort: State<'_, AbortState>,
 ) -> Result<crate::providers::CompletionResponse, String> {
     let (settings, known_facts, open_tasks) = match state.0.lock() {
         Ok(conn) => {
@@ -185,7 +199,14 @@ pub async fn chat_message(
                 .await
         }
         "claudecode" => {
-            crate::providers::claudecode::complete_with_session(request, &session.0).await
+            crate::providers::claudecode::complete_with_session(
+                request,
+                &session.0,
+                &settings.claude_access,
+                &settings.claude_workdir,
+                &abort.0,
+            )
+            .await
         }
         _ => {
             ClaudeProvider::new(settings.api_key_anthropic.clone())
