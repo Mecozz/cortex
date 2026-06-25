@@ -19,7 +19,10 @@ pub async fn haiku(api_key: &str, system: &str, user: &str, max_tokens: u32) -> 
     if user.trim().is_empty() {
         return None;
     }
-    if !api_key.is_empty() {
+    // `sk-ant-oat01-` tokens are subscription OAuth tokens, NOT API keys — they
+    // 401 as `x-api-key`. Only a real API key (`sk-ant-api…`) uses the API path;
+    // an oat token or empty value falls back to the subscription CLI.
+    if !api_key.is_empty() && !api_key.starts_with("sk-ant-oat") {
         api_haiku(api_key, system, user, max_tokens).await
     } else {
         sub_haiku(system, user).await
@@ -62,13 +65,15 @@ async fn api_haiku(api_key: &str, system: &str, user: &str, max_tokens: u32) -> 
 async fn sub_haiku(system: &str, user: &str) -> Option<String> {
     let sandbox = std::env::temp_dir().join("cortex-sandbox");
     let _ = std::fs::create_dir_all(&sandbox);
-    // REPLACE Claude Code's agent persona (via --system-prompt, not --append) so
-    // it behaves as a plain extractor. With the default persona it answers
-    // conversationally and tries to use tools instead of returning JSON.
-    let sys = format!(
-        "{system}\n\nYou are a JSON extraction engine. Output ONLY the JSON described \
-         above — no commentary, no code fences, no tool use, no actions."
-    );
+    // Every CLI arg must be space/quote-free — Windows `cmd /c` mangles args
+    // containing spaces, quotes, or newlines (the working chat path keeps all
+    // args clean and sends text via stdin). So the guard prompt goes to a FILE
+    // (passed by its no-space relative path) and the caller's detailed
+    // instructions + data ride on stdin. --system-prompt-file (replace) makes
+    // the model a plain extractor instead of a tool-using agent.
+    const GUARD: &str = "You are a JSON extraction engine. You only output valid JSON. You never use tools, never take actions, never add commentary or code fences.";
+    let _ = std::fs::write(sandbox.join("cortex_guard.txt"), GUARD);
+    let payload = format!("{system}\n\n=== INPUT ===\n{user}");
     let args = [
         "--print",
         "--permission-mode",
@@ -77,12 +82,12 @@ async fn sub_haiku(system: &str, user: &str) -> Option<String> {
         "text",
         "--model",
         HAIKU,
-        "--system-prompt",
-        sys.as_str(),
+        "--system-prompt-file",
+        "cortex_guard.txt",
     ];
 
     #[cfg(target_os = "windows")]
-    let mut child = {
+    let spawn = {
         let mut full: Vec<&str> = vec!["/c", "claude"];
         full.extend_from_slice(&args);
         tokio::process::Command::new("cmd")
@@ -92,20 +97,26 @@ async fn sub_haiku(system: &str, user: &str) -> Option<String> {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .ok()?
     };
     #[cfg(not(target_os = "windows"))]
-    let mut child = tokio::process::Command::new("claude")
+    let spawn = tokio::process::Command::new("claude")
         .current_dir(&sandbox)
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
+        .spawn();
+
+    let mut child = match spawn {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[sub_haiku] spawn FAILED: {e}");
+            return None;
+        }
+    };
 
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(user.as_bytes()).await;
+        let _ = stdin.write_all(payload.as_bytes()).await;
     }
     let out = child.wait_with_output().await.ok()?;
     if !out.status.success() {
