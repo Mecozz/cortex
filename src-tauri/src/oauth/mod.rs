@@ -122,16 +122,17 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     let _ = stream.write_all(html).await;
 
     let client = reqwest::Client::new();
-    let params = [
-        ("grant_type", "authorization_code"),
-        ("code", code.as_str()),
-        ("redirect_uri", redirect_uri.as_str()),
-        ("client_id", CLIENT_ID),
-        ("code_verifier", verifier.as_str()),
-    ];
+    let body = format!(
+        "grant_type=authorization_code&client_id={}&code={}&redirect_uri={}&code_verifier={}",
+        urlencode(CLIENT_ID),
+        urlencode(&code),
+        urlencode(&redirect_uri),
+        urlencode(&verifier)
+    );
     let resp = client
         .post(TOKEN_URL)
-        .form(&params)
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(body)
         .send()
         .await
         .map_err(|e| e.to_string())?;
