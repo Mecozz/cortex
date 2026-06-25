@@ -122,24 +122,26 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     let _ = stream.write_all(html).await;
 
     let client = reqwest::Client::new();
+    let token_redirect = "http://127.0.0.1/callback";
     let body = format!(
         "grant_type=authorization_code&client_id={}&code={}&redirect_uri={}&code_verifier={}",
         urlencode(CLIENT_ID),
         urlencode(&code),
-        urlencode(&redirect_uri),
+        urlencode(token_redirect),
         urlencode(&verifier)
     );
     let resp = client
         .post(TOKEN_URL)
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body)
+        .body(body.clone())
         .send()
         .await
         .map_err(|e| e.to_string())?;
 
     if !resp.status().is_success() {
+        let status = resp.status().as_u16();
         let txt = resp.text().await.unwrap_or_default();
-        return Err(format!("Token exchange failed: {}", txt));
+        return Err(format!("[{}] sent: {} | got: {}", status, body, txt));
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
