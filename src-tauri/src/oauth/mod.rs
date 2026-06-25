@@ -5,7 +5,7 @@ use tokio::{
     net::TcpListener,
 };
 
-const CLIENT_ID: &str = "https://claude.ai/oauth/claude-code-client-metadata";
+const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const AUTHORIZE_URL: &str = "https://claude.com/cai/oauth/authorize";
 const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const SCOPE: &str = "user:inference user:profile";
