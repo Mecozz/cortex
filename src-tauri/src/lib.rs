@@ -10,6 +10,7 @@ pub mod portability;
 pub mod providers;
 pub mod sync;
 pub mod tasks;
+pub mod oauth;
 pub mod telegram;
 pub mod tools;
 pub mod vault;
@@ -74,6 +75,7 @@ pub fn run() {
             forge_tool,
             telegram_send,
             export_data,
+            oauth_login,
             read_claude_credentials,
             import_data,
         ])
@@ -381,4 +383,9 @@ fn read_claude_credentials() -> Result<String, String> {
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "No access token found in Claude Code credentials".to_string())
+}
+
+#[tauri::command]
+async fn oauth_login(app: tauri::AppHandle) -> Result<String, String> {
+    oauth::begin_oauth(&app).await
 }

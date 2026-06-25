@@ -151,7 +151,7 @@
           autocomplete="off"
         />
       </label>
-      <button type="button" onclick={importFromClaude}>Import from Claude Code</button>
+      <button type="button" onclick={oauthLogin}>Connect Claude.ai</button>
       <label>
         Model
         <select bind:value={settings.model}>

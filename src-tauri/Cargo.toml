@@ -25,6 +25,7 @@ async-trait = "0.1"
 thiserror = "1"
 aes-gcm = "0.10"
 base64 = "0.22"
+sha2 = "0.10"
 rhai = { version = "1", features = ["sync"] }
 
 [profile.release]
