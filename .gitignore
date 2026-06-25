@@ -3,3 +3,16 @@ dist
 .svelte-kit
 src-tauri/target
 src-tauri/gen
+
+# Personal data — NEVER commit. The brain lives in AppData, but guard the repo
+# dir too in case an export/backup/db ever lands here.
+*.db
+*.sqlite
+*.sqlite3
+cortex_export.json
+transformer_memories.json
+*_memories.json
+bob_cortex.json
+bob_*.json
+*.bak-*
+backups/

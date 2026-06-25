@@ -1,11 +1,13 @@
 pub mod health;
 
-use rusqlite::{types::ValueRef, Connection};
+use rusqlite::{params, types::ValueRef, Connection};
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::{
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
+use uuid::Uuid;
 
 fn rows_as_json(conn: &Connection, sql: &str) -> Vec<Value> {
     let mut stmt = match conn.prepare(sql) {
@@ -97,17 +99,118 @@ pub fn export_json(conn: &Connection, data_dir: &Path) -> Result<String, String>
     Ok(path.to_string_lossy().into())
 }
 
+/// One memory from an external brain export (e.g. the Transformer brain).
+#[derive(Deserialize)]
+struct ExternalMemory {
+    #[serde(default, rename = "type")]
+    mem_type: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    source: String,
+    #[serde(default)]
+    created_at: i64,
+    #[serde(default)]
+    access_count: i64,
+}
+
+/// Import an external memories JSON array into the `facts` table so it's
+/// recallable in chat. Maps semantic/procedural -> high confidence, episodic ->
+/// archive tier. Title is folded into content for self-contained facts.
+/// Generic IMPORT path — any tool can produce this shape; the Transformer
+/// brain is the first source. Returns # imported.
+pub fn import_memories(conn: &Connection, proj_id: &str, path: &str) -> Result<usize, String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mems: Vec<ExternalMemory> = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    // Self-healing: collapse any existing duplicate-content facts (e.g. from a
+    // double-click import) down to one each before importing.
+    let _ = conn.execute(
+        "DELETE FROM facts WHERE rowid NOT IN (SELECT MIN(rowid) FROM facts GROUP BY content)",
+        [],
+    );
+
+    let _ = conn.execute_batch("BEGIN");
+    let mut imported = 0;
+    for m in mems {
+        let content = if m.title.trim().is_empty() {
+            m.content.clone()
+        } else {
+            format!("{} — {}", m.title.trim(), m.content)
+        };
+        if content.trim().is_empty() {
+            continue;
+        }
+        // Idempotent: skip if this exact fact is already present.
+        let exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM facts WHERE content = ?1 LIMIT 1",
+                params![content],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        if exists {
+            continue;
+        }
+        let category = if m.mem_type.trim().is_empty() {
+            "imported".to_string()
+        } else {
+            m.mem_type.clone()
+        };
+        let confidence: f64 = match m.mem_type.as_str() {
+            "semantic" | "procedural" => 0.85,
+            "episodic" => 0.5,
+            _ => 0.6,
+        };
+        let importance = (0.5 + m.access_count as f64 * 0.01).min(1.0);
+        let created = if m.created_at > 0 { m.created_at } else { now };
+        if conn
+            .execute(
+                "INSERT INTO facts
+                 (id, proj_id, content, category, is_current, valid_from,
+                  last_confirmed_at, confidence_score, importance_score,
+                  source_conversation, created_at)
+                 VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5, ?6, ?7, ?8, ?5)",
+                params![
+                    Uuid::new_v4().to_string(),
+                    proj_id,
+                    content,
+                    category,
+                    created,
+                    confidence,
+                    importance,
+                    m.source,
+                ],
+            )
+            .is_ok()
+        {
+            imported += 1;
+        }
+    }
+    let _ = conn.execute_batch("COMMIT");
+    Ok(imported)
+}
+
 pub fn import_json(conn: &Connection, path: &str) -> Result<usize, String> {
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let data: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
     let tables = [
         "proj", "facts", "episodic", "tasks", "convo", "rel", "tools",
     ];
+    // One transaction for the whole import — 45k+ autocommits would be glacial.
+    let _ = conn.execute_batch("BEGIN");
     let mut total = 0;
     for table in &tables {
         if let Some(rows) = data[table].as_array() {
             total += import_table(conn, table, rows);
         }
     }
+    let _ = conn.execute_batch("COMMIT");
     Ok(total)
 }

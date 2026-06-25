@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { open } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
 
   interface Settings {
@@ -108,6 +109,35 @@
   }
   let oauthLoading = $state(false);
   const oauthLogin = () => { oauthLoading = true; invoke<string>("oauth_login").then((t) => { settings.api_key_anthropic = t; oauthLoading = false; alert("OK: " + t.slice(0,30)); }).catch((e) => { loadError = String(e); oauthLoading = false; alert("ERR: " + String(e)); }); };
+
+  let importPath = $state("");
+  let importing = $state(false);
+  let importMsg = $state("");
+  function importMemories() {
+    importing = true;
+    importMsg = "";
+    invoke<number>("import_memories", { path: importPath })
+      .then((n) => (importMsg = `Imported ${n} memories into Cortex.`))
+      .catch((e) => (importMsg = String(e)))
+      .finally(() => (importing = false));
+  }
+
+  async function browse() {
+    const f = await open({
+      multiple: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (typeof f === "string") importPath = f;
+  }
+
+  function importFull() {
+    importing = true;
+    importMsg = "Importing (large files take a moment)...";
+    invoke<number>("import_data", { path: importPath })
+      .then((n) => (importMsg = `Imported ${n} records (facts + messages + relationships).`))
+      .catch((e) => (importMsg = String(e)))
+      .finally(() => (importing = false));
+  }
 </script>
 
 <div class="settings">
@@ -248,6 +278,37 @@
       </div>
       {#if syncMsg}
         <p class="smsg">{syncMsg}</p>
+      {/if}
+    </section>
+
+    <section>
+      <h3>Import Memories</h3>
+      <p class="hint">
+        Load memories from a JSON file into Cortex's brain. The file is an array of
+        <code>{`{type, title, content, tags, source, created_at}`}</code> objects
+        (e.g. exported from another assistant or brain). Each becomes a recallable fact.
+      </p>
+      <label>
+        JSON file path
+        <div class="path-row">
+          <input type="text" bind:value={importPath} placeholder="C:\path\to\memories.json" />
+          <button class="browse" onclick={browse}>Browse…</button>
+        </div>
+      </label>
+      <div class="btn-row">
+        <button onclick={importMemories} disabled={importing || !importPath}>
+          {importing ? "Importing..." : "Import memories (simple)"}
+        </button>
+        <button onclick={importFull} disabled={importing || !importPath}>
+          {importing ? "Importing..." : "Import full export"}
+        </button>
+      </div>
+      <p class="hint">
+        <b>Simple</b> = a memories array (→ facts). <b>Full export</b> = a native
+        Cortex export with facts + messages + relationships.
+      </p>
+      {#if importMsg}
+        <p class="smsg">{importMsg}</p>
       {/if}
     </section>
 
@@ -423,6 +484,38 @@
   .smsg {
     font-size: 12px;
     color: #aaa;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: #888;
+    line-height: 1.5;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .path-row input {
+    flex: 1;
+  }
+
+  button.browse {
+    background: #2a2a32;
+    white-space: nowrap;
+  }
+
+  button.browse:hover:not(:disabled) {
+    background: #3a3a44;
+  }
+
+  .hint code {
+    background: #18181f;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 1px 4px;
+    font-size: 11px;
   }
 
   .warn {

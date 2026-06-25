@@ -53,13 +53,29 @@ pub async fn complete(
     workdir: String,
     abort: &std::sync::Mutex<Option<u32>>,
 ) -> Result<CompletionResponse, ProviderError> {
-    let prompt = request
+    let user_msg = request
         .messages
         .iter()
         .rev()
         .find(|m| m.role == "user")
         .map(|m| m.content.clone())
         .unwrap_or_default();
+
+    // The `claude` CLI takes one prompt on stdin. Fold the injected context
+    // (retrieved memories + persona, assembled by INJECT) in FRONT of the user's
+    // message so the subscription provider actually sees it — otherwise Cortex's
+    // memory never reaches Claude. stdin has no length limit, so long fact lists
+    // are fine here (a CLI arg would blow the Windows command-line cap).
+    let prompt = match request.system_prompt.as_deref() {
+        Some(sp) if !sp.trim().is_empty() => format!(
+            "You are this user's personal AI with access to their long-term memory. \
+             The CONTEXT below was retrieved from their memory for this question and is \
+             authoritative — answer from it directly. Do NOT claim you have no information \
+             when the context covers it, and don't go searching elsewhere first.\n\n\
+             === CONTEXT FROM MEMORY ===\n{sp}\n\n=== USER MESSAGE ===\n{user_msg}"
+        ),
+        _ => user_msg,
+    };
 
     // Permission mode + working directory depend on the access setting:
     // "full" = --dangerously-skip-permissions in a real dir (full agent),

@@ -48,6 +48,7 @@ fn stop_chat(abort: tauri::State<'_, commands::AbortState>) -> Result<(), String
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -102,6 +103,7 @@ pub fn run() {
             oauth_login,
             read_claude_credentials,
             import_data,
+            import_memories,
             clear_claude_session,
             stop_chat,
         ])
@@ -405,6 +407,14 @@ fn export_data(state: State<'_, DbState>, db_path: State<'_, DbPath>) -> Result<
 fn import_data(path: String, state: State<'_, DbState>) -> Result<usize, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     portability::import_json(&conn, &path)
+}
+
+/// Import an external memories JSON (e.g. a Transformer-brain export) into facts.
+#[tauri::command]
+fn import_memories(path: String, state: State<'_, DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let proj_id = memory::default_project_id(&conn).map_err(|e| e.to_string())?;
+    portability::import_memories(&conn, &proj_id, &path)
 }
 
 #[tauri::command]

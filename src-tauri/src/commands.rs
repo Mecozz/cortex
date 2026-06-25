@@ -151,16 +151,31 @@ pub async fn chat_message(
                 }
             }
             let proj_id = memory::default_project_id(&conn).unwrap_or_default();
-            let pass1 = memory::pass1::retrieve(&conn, &proj_id, 20).unwrap_or_default();
-            let facts: Vec<String> = if pass1.is_empty() {
-                memory::pass2::retrieve(&conn, &proj_id, 10)
+            // Pull facts relevant to the user's latest message first, then top up
+            // with a few high-confidence facts (identity/preferences).
+            let query = messages
+                .iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.as_str())
+                .unwrap_or("");
+            let mut facts: Vec<String> = memory::pass1::search(&conn, &proj_id, query, 15)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|f| f.content)
+                .collect();
+            for f in memory::pass1::retrieve(&conn, &proj_id, 8).unwrap_or_default() {
+                if !facts.contains(&f.content) {
+                    facts.push(f.content);
+                }
+            }
+            if facts.is_empty() {
+                facts = memory::pass2::retrieve(&conn, &proj_id, 10)
                     .unwrap_or_default()
                     .into_iter()
                     .map(|f| f.content)
-                    .collect()
-            } else {
-                pass1.into_iter().map(|f| f.content).collect()
-            };
+                    .collect();
+            }
             let task_list: Vec<String> = tasks::open(&conn, &proj_id, 10)
                 .unwrap_or_default()
                 .into_iter()
