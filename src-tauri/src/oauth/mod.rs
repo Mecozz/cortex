@@ -87,13 +87,15 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
 
+    let state = uuid::Uuid::new_v4().simple().to_string();
     let auth_url = format!(
-        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&code_challenge={}&code_challenge_method=S256",
+        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&code_challenge={}&code_challenge_method=S256&state={}",
         AUTHORIZE_URL,
         urlencode(CLIENT_ID),
         urlencode(&redirect_uri),
         urlencode(SCOPE),
-        challenge
+        challenge,
+        state
     );
 
     app.opener()
