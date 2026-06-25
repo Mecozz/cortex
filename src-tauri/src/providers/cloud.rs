@@ -73,8 +73,7 @@ async fn do_token_refresh(client: &Client) -> Option<String> {
             .ok()?
             .as_millis() as u64
             + exp * 1000;
-        updated["claudeAiOauth"]["expiresAt"] =
-            serde_json::Value::Number(expires_at.into());
+        updated["claudeAiOauth"]["expiresAt"] = serde_json::Value::Number(expires_at.into());
     }
     let _ = std::fs::write(&path, serde_json::to_string_pretty(&updated).ok()?);
 
@@ -126,17 +125,14 @@ struct AnthropicErrorDetail {
     message: String,
 }
 
-fn build_request(
-    client: &Client,
-    token: &str,
-    body: &AnthropicRequest,
-) -> reqwest::RequestBuilder {
+fn build_request(client: &Client, token: &str, body: &AnthropicRequest) -> reqwest::RequestBuilder {
     let req = client
         .post("https://api.anthropic.com/v1/messages")
         .header("anthropic-version", "2023-06-01")
         .json(body);
     if token.starts_with("sk-ant-oat01-") {
         req.header("Authorization", format!("Bearer {}", token))
+            .header("anthropic-beta", "oauth-2025-04-20")
     } else {
         req.header("x-api-key", token)
     }

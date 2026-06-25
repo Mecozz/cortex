@@ -97,6 +97,7 @@
   function clearChat() {
     messages = [];
     error = "";
+    invoke("clear_claude_session").catch(() => {});
   }
 </script>
 

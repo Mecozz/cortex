@@ -21,8 +21,8 @@
   let settings: Settings = $state({
     api_key_anthropic: "",
     api_key_openai: "",
-    provider: "claude",
-    model: "claude-sonnet-4-6",
+    provider: "claudecode",
+    model: "claude-opus-4-8",
     system_prompt: "",
     fallback_policy: "hard_fail",
     ollama_url: "http://localhost:11434",
@@ -85,7 +85,7 @@
     syncing = true;
     syncMsg = "";
     invoke("sync_import", { syncFolder: settings.sync_folder })
-      .then(() => (syncMsg = "Import queued ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â restart to apply."))
+      .then(() => (syncMsg = "Import queued ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â restart to apply."))
       .catch((e) => (syncMsg = String(e)))
       .finally(() => {
         syncing = false;
@@ -103,7 +103,7 @@
       });
   }
   let oauthLoading = $state(false);
-  const oauthLogin = () => { oauthLoading = true; invoke<string>("oauth_login").then((t) => { settings.api_key_anthropic = t; oauthLoading = false; }).catch((e) => { loadError = String(e); oauthLoading = false; }); };
+  const oauthLogin = () => { oauthLoading = true; invoke<string>("oauth_login").then((t) => { settings.api_key_anthropic = t; oauthLoading = false; alert("OK: " + t.slice(0,30)); }).catch((e) => { loadError = String(e); oauthLoading = false; alert("ERR: " + String(e)); }); };
 </script>
 
 <div class="settings">
@@ -122,7 +122,8 @@
       <label>
         Active provider
         <select bind:value={settings.provider}>
-          <option value="claude">Claude (Anthropic)</option>
+          <option value="claudecode">Claude Code (Max subscription)</option>
+          <option value="claude">Claude (API key)</option>
           <option value="ollama">Ollama (local)</option>
         </select>
       </label>
@@ -151,7 +152,7 @@
       <label>
         Model
         <select bind:value={settings.model}>
-          {#if settings.provider === "claude"}
+          {#if settings.provider === "claude" || settings.provider === "claudecode"}
             {#each claudeModels as m}
               <option value={m}>{m}</option>
             {/each}

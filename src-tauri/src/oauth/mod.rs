@@ -5,8 +5,8 @@ use tokio::{
     net::TcpListener,
 };
 
-const CLIENT_ID: &str = "https://claude.ai/oauth/claude-code-client-metadata";
-const AUTHORIZE_URL: &str = "https://platform.claude.com/oauth/authorize";
+const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const AUTHORIZE_URL: &str = "https://claude.ai/oauth/authorize";
 const TOKEN_URL: &str = "https://platform.claude.com/v1/oauth/token";
 const SCOPE: &str = "user:inference user:profile";
 
@@ -72,7 +72,10 @@ fn save_credentials(access: &str, refresh: &str, expires_in: u64) {
             "expiresAt": expires_at
         }
     });
-    let _ = std::fs::write(&path, serde_json::to_string_pretty(&creds).unwrap_or_default());
+    let _ = std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&creds).unwrap_or_default(),
+    );
 }
 
 pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
@@ -81,10 +84,11 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     let verifier = generate_code_verifier();
     let challenge = code_challenge(&verifier);
 
-    let redirect_uri = "http://127.0.0.1/callback".to_string();
-    let listener = TcpListener::bind("127.0.0.1:80")
+    let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|e| format!("Cannot bind port 80: {}", e))?;
+        .map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let redirect_uri = format!("http://localhost:{}/callback", port);
 
     let state = uuid::Uuid::new_v4().simple().to_string();
     let auth_url = format!(
@@ -121,18 +125,19 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     let _ = stream.write_all(html).await;
 
     let client = reqwest::Client::new();
-    let token_redirect = "http://127.0.0.1/callback";
-    let body = format!(
-        "grant_type=authorization_code&client_id={}&code={}&redirect_uri={}&code_verifier={}",
-        urlencode(CLIENT_ID),
-        urlencode(&code),
-        urlencode(token_redirect),
-        urlencode(&verifier)
-    );
+    let json_body = serde_json::json!({
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "code_verifier": verifier,
+        "state": state,
+        "expires_in": 31536000
+    });
     let resp = client
         .post(TOKEN_URL)
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(body.clone())
+        .header("Content-Type", "application/json")
+        .json(&json_body)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -140,7 +145,7 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let txt = resp.text().await.unwrap_or_default();
-        return Err(format!("[{}] sent: {} | got: {}", status, body, txt));
+        return Err(format!("[{}] body: {} | got: {}", status, json_body, txt));
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;

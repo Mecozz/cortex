@@ -6,11 +6,11 @@ pub mod db;
 pub mod inject;
 pub mod librarian;
 pub mod memory;
+pub mod oauth;
 pub mod portability;
 pub mod providers;
 pub mod sync;
 pub mod tasks;
-pub mod oauth;
 pub mod telegram;
 pub mod tools;
 pub mod vault;
@@ -20,6 +20,12 @@ use crate::core::health::HealthCheck;
 use commands::{DbPath, DbState, VaultState, WatchState};
 use std::sync::Mutex;
 use tauri::{Manager, State};
+
+#[tauri::command]
+fn clear_claude_session(s: tauri::State<'_, commands::ClaudeSessionState>) -> Result<(), String> {
+    *s.0.lock().map_err(|e| e.to_string())? = None;
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,7 +43,7 @@ pub fn run() {
             app.manage(WatchState(Mutex::new(watch::CircuitBreaker::default())));
             app.manage(DbPath(db_path.clone()));
             app.manage(VaultState(Mutex::new(vault_key)));
-
+            app.manage(commands::ClaudeSessionState(Mutex::new(None)));
             let lib_db = db_path.clone();
             tauri::async_runtime::spawn(async move {
                 lib_background_task(lib_db).await;
@@ -78,6 +84,7 @@ pub fn run() {
             oauth_login,
             read_claude_credentials,
             import_data,
+            clear_claude_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -375,7 +382,9 @@ fn read_claude_credentials() -> Result<String, String> {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "Cannot find home directory".to_string())?;
-    let path = std::path::Path::new(&home).join(".claude").join(".credentials.json");
+    let path = std::path::Path::new(&home)
+        .join(".claude")
+        .join(".credentials.json");
     let content = std::fs::read_to_string(&path)
         .map_err(|_| "Claude Code not found. Install Claude Code and sign in first.".to_string())?;
     let v: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;

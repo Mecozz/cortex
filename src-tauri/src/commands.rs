@@ -17,6 +17,7 @@ pub struct DbState(pub Mutex<Connection>);
 pub struct WatchState(pub Mutex<watch::CircuitBreaker>);
 pub struct DbPath(pub std::path::PathBuf);
 pub struct VaultState(pub Mutex<vault::VaultKey>);
+pub struct ClaudeSessionState(pub Mutex<Option<String>>);
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ pub async fn chat_message(
     state: State<'_, DbState>,
     watch: State<'_, WatchState>,
     vault_state: State<'_, VaultState>,
+    session: State<'_, ClaudeSessionState>,
 ) -> Result<crate::providers::CompletionResponse, String> {
     let (settings, known_facts, open_tasks) = match state.0.lock() {
         Ok(conn) => {
@@ -155,12 +157,10 @@ pub async fn chat_message(
         Err(_) => (Settings::default(), vec![], vec![]),
     };
 
-    // LOCALONLY: block cloud providers when enabled
     if settings.local_only && settings.provider != "ollama" {
         return Err("Local-only mode is enabled. Switch provider to Ollama.".into());
     }
 
-    // Circuit breaker: block disabled providers
     if watch
         .0
         .lock()
@@ -173,11 +173,7 @@ pub async fn chat_message(
         ));
     }
 
-    let system = if settings.system_prompt.is_empty() {
-        None
-    } else {
-        Some(settings.system_prompt.clone())
-    };
+    let system = (!settings.system_prompt.is_empty()).then_some(settings.system_prompt.clone());
     let request =
         Injector::new(system).assemble(messages, settings.model.clone(), &known_facts, &open_tasks);
     let policy: FallbackPolicy = settings.fallback_policy.parse().unwrap_or_default();
@@ -187,6 +183,9 @@ pub async fn chat_message(
             OllamaProvider::new(settings.ollama_url.clone())
                 .complete(request)
                 .await
+        }
+        "claudecode" => {
+            crate::providers::claudecode::complete_with_session(request, &session.0).await
         }
         _ => {
             ClaudeProvider::new(settings.api_key_anthropic.clone())

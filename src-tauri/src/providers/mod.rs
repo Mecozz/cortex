@@ -1,3 +1,4 @@
+pub mod claudecode;
 pub mod cloud;
 pub mod fallback;
 pub mod health;
