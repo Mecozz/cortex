@@ -81,11 +81,10 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     let verifier = generate_code_verifier();
     let challenge = code_challenge(&verifier);
 
-    let listener = TcpListener::bind("127.0.0.1:0")
+    let redirect_uri = "http://127.0.0.1/callback".to_string();
+    let listener = TcpListener::bind("127.0.0.1:80")
         .await
-        .map_err(|e| e.to_string())?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
+        .map_err(|e| format!("Cannot bind port 80: {}", e))?;
 
     let state = uuid::Uuid::new_v4().simple().to_string();
     let auth_url = format!(
