@@ -247,8 +247,13 @@ pub async fn chat_message(
                     resp.output_tokens,
                 ),
             };
-            if let Ok(conn) = state.0.lock() {
-                let _ = cost::log_usage(&conn, &entry);
+            // Only log real metered usage. The subscription (claudecode) provider
+            // reports 0 tokens / $0 — logging it pollutes the cost dashboard with
+            // fake free rows, so skip token-less responses.
+            if entry.input_tokens > 0 || entry.output_tokens > 0 {
+                if let Ok(conn) = state.0.lock() {
+                    let _ = cost::log_usage(&conn, &entry);
+                }
             }
             Ok(resp)
         }

@@ -149,11 +149,13 @@ pub fn import_memories(conn: &Connection, proj_id: &str, path: &str) -> Result<u
         if content.trim().is_empty() {
             continue;
         }
-        // Idempotent: skip if this exact fact is already present.
+        // Idempotent: skip if this exact fact already exists in THIS project
+        // (proj-scoped to match the cleanup DELETE above; importing the same text
+        // into a different project still works).
         let exists: bool = conn
             .query_row(
-                "SELECT 1 FROM facts WHERE content = ?1 LIMIT 1",
-                params![content],
+                "SELECT 1 FROM facts WHERE proj_id = ?1 AND content = ?2 LIMIT 1",
+                params![proj_id, content],
                 |_| Ok(true),
             )
             .unwrap_or(false);

@@ -95,8 +95,15 @@
     scrollToBottom();
 
     try {
+      // Send the real conversation transcript (excluding queued/canceled items)
+      // so the API/Ollama providers have multi-turn context. The claudecode
+      // provider only uses the latest user message (it resumes server-side), so
+      // this is harmless there and necessary for the stateless providers.
+      const transcript = messages
+        .filter((m) => m.status !== "queued" && m.status !== "canceled")
+        .map(({ role, content }) => ({ role, content }));
       const resp: CompletionResponse = await invoke("chat_message", {
-        messages: [{ role: "user", content: item.text }],
+        messages: transcript,
       });
       if (!stopped && resp.content) {
         messages = [

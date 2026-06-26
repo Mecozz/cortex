@@ -33,6 +33,19 @@ pub fn open(conn: &Connection, proj_id: &str, limit: usize) -> Result<Vec<Task>>
 }
 
 pub fn insert(conn: &Connection, proj_id: &str, content: &str, source_convo: &str) -> Result<()> {
+    // Dedup: task extraction runs every turn, so skip if an identical open task
+    // already exists (otherwise the same todo piles up turn after turn).
+    let exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM tasks
+             WHERE proj_id = ?1 AND content = ?2 AND status = 'open' LIMIT 1",
+            rusqlite::params![proj_id, content],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+    if exists {
+        return Ok(());
+    }
     let now = now_secs();
     conn.execute(
         "INSERT INTO tasks

@@ -3,7 +3,8 @@ pub mod health;
 use crate::core::types::{CompletionRequest, Message};
 
 const MAX_HISTORY_MESSAGES: usize = 20;
-const DEFAULT_MAX_TOKENS: u32 = 1024;
+// Chat response cap for the API provider (1024 truncated long replies mid-sentence).
+const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 pub struct Injector {
     pub system_prompt: Option<String>,

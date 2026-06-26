@@ -14,8 +14,14 @@ pub struct SyncStatus {
 
 pub fn export(conn: &Connection, sync_folder: &str) -> rusqlite::Result<()> {
     let dest = PathBuf::from(sync_folder).join("cortex.db");
-    let path_str = dest.to_string_lossy();
-    conn.execute_batch(&format!("VACUUM INTO '{path_str}'"))
+    // VACUUM INTO fails if the destination exists, so clear it + WAL/shm sidecars
+    // first (otherwise every export after the first one fails). Escape quotes for
+    // the SQL string literal.
+    let _ = std::fs::remove_file(&dest);
+    let _ = std::fs::remove_file(dest.with_file_name("cortex.db-wal"));
+    let _ = std::fs::remove_file(dest.with_file_name("cortex.db-shm"));
+    let esc = dest.to_string_lossy().replace('\'', "''");
+    conn.execute_batch(&format!("VACUUM INTO '{esc}'"))
 }
 
 pub fn status(db_path: &Path, sync_folder: &str) -> SyncStatus {

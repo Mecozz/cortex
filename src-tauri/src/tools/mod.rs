@@ -123,15 +123,27 @@ pub async fn forge(description: &str, api_key: &str) -> Result<String, String> {
     let raw = crate::core::llm::generate(api_key, FORGE_SYSTEM, description, 1024)
         .await
         .ok_or("Tool generation failed (no API key, and Claude subscription unavailable)")?;
-    // Strip any code fences the model may add despite instructions.
-    let code = raw
-        .trim()
-        .trim_start_matches("```rhai")
-        .trim_start_matches("```rust")
-        .trim_start_matches("```")
-        .trim_end_matches("```")
-        .trim()
-        .to_string();
+    let code = strip_fence(&raw);
     validate(&code)?;
     Ok(code)
+}
+
+/// Extract code from a fenced block if present (handles ```lang tags and any
+/// surrounding prose), else returns the trimmed input.
+fn strip_fence(raw: &str) -> String {
+    let t = raw.trim();
+    let Some(start) = t.find("```") else {
+        return t.to_string();
+    };
+    let after = &t[start + 3..];
+    // Drop the rest of the opening fence line (the optional language tag).
+    let body = match after.find('\n') {
+        Some(nl) => &after[nl + 1..],
+        None => after,
+    };
+    // Cut at the closing fence if there is one.
+    match body.rfind("```") {
+        Some(end) => body[..end].trim().to_string(),
+        None => body.trim().to_string(),
+    }
 }
