@@ -2,6 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import BackupPanel from "./lib/BackupPanel.svelte";
   import HealthPanel from "./lib/HealthPanel.svelte";
+  import HowItWorks from "./lib/HowItWorks.svelte";
   import MemoryBrowser from "./lib/MemoryBrowser.svelte";
   import MessageList from "./lib/MessageList.svelte";
   import ChatInput from "./lib/ChatInput.svelte";
@@ -185,6 +186,7 @@
       <button class="i" onclick={go("tools")} title="Tools">🔧</button>
       <button class="i" onclick={go("vault")} title="Vault">🔑</button>
       <button class="i" onclick={go("backup")} title="Backup">💾</button>
+      <button class="i" onclick={go("flow")} title="How it works">&#x2139;</button>
       <button class="i" onclick={go("settings")} title="Settings">⚙</button>
     </div>
   </header>
@@ -192,6 +194,8 @@
   <div class="body">
     {#if activePanel === "settings"}
       <Settings onClose={go("")} />
+    {:else if activePanel === "flow"}
+      <HowItWorks onClose={go("")} />
     {:else if activePanel === "memory"}
       <MemoryBrowser onClose={go("")} />
     {:else if activePanel === "tasks"}
