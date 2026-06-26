@@ -33,25 +33,16 @@ fn code_challenge(verifier: &str) -> String {
     general_purpose::URL_SAFE_NO_PAD.encode(hasher.finalize())
 }
 
-fn extract_code(request: &str) -> Result<String, String> {
-    let path = request
-        .lines()
-        .next()
-        .and_then(|l| l.split_whitespace().nth(1))
-        .ok_or("Malformed HTTP request")?;
-    path.split('?')
-        .nth(1)
-        .unwrap_or("")
-        .split('&')
-        .find_map(|kv| {
-            let mut parts = kv.splitn(2, '=');
-            if parts.next() == Some("code") {
-                parts.next().map(String::from)
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| "No authorization code in callback".to_string())
+fn query_param(request: &str, key: &str) -> Option<String> {
+    let path = request.lines().next()?.split_whitespace().nth(1)?;
+    path.split('?').nth(1)?.split('&').find_map(|kv| {
+        let mut parts = kv.splitn(2, '=');
+        if parts.next() == Some(key) {
+            parts.next().map(String::from)
+        } else {
+            None
+        }
+    })
 }
 
 fn save_credentials(access: &str, refresh: &str, expires_in: u64) {
@@ -110,7 +101,11 @@ pub async fn begin_oauth(app: &tauri::AppHandle) -> Result<String, String> {
     let n = stream.read(&mut buf).await.map_err(|e| e.to_string())?;
     let request = String::from_utf8_lossy(&buf[..n]).to_string();
 
-    let code = extract_code(&request)?;
+    let code = query_param(&request, "code").ok_or("No authorization code in callback")?;
+    // CSRF: the state returned in the callback must match the one we sent.
+    if query_param(&request, "state").as_deref() != Some(state.as_str()) {
+        return Err("OAuth state mismatch — possible CSRF; aborting login.".into());
+    }
 
     let html = b"<html><body><h2>Authenticated! You can close this tab.</h2></body></html>";
     let _ = stream

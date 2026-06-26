@@ -206,10 +206,19 @@ pub async fn complete_with_session(
         abort,
     )
     .await;
-    // Only persist a newly-created session id once it actually succeeded.
-    if is_new && result.is_ok() {
+    if is_new {
+        // Only persist a newly-created session id once it actually succeeded.
+        if result.is_ok() {
+            if let Ok(mut g) = slot.lock() {
+                *g = Some(sid);
+            }
+        }
+    } else if result.is_err() {
+        // A --resume that failed means the stored session is dead/expired. Clear
+        // it so the next turn starts fresh instead of resuming the broken id
+        // forever (which would wedge chat until a manual New).
         if let Ok(mut g) = slot.lock() {
-            *g = Some(sid);
+            *g = None;
         }
     }
     result

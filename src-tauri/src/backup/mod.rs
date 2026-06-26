@@ -81,6 +81,7 @@ fn snapshot_before_swap(data_dir: &Path, db_path: &Path) {
     let _ = std::fs::create_dir_all(&dir);
     let dest = dir.join(format!("cortex_pre_restore_{}.db", now_secs()));
     let _ = std::fs::copy(db_path, &dest);
+    prune(data_dir); // keep only the newest few pre_restore snapshots
 }
 
 pub fn create(conn: &Connection, data_dir: &Path, label: Option<&str>) -> Result<String> {
@@ -143,14 +144,23 @@ pub fn delete(data_dir: &Path, filename: &str) -> std::io::Result<()> {
 }
 
 pub fn prune(data_dir: &Path) {
-    // Only auto (bare-timestamp) backups are pruned. Named/labeled snapshots
-    // (anything whose name isn't all digits) are kept forever, so a user's named
-    // backup — or a pre_restore safety copy — can't be silently deleted.
-    let auto: Vec<BackupEntry> = list(data_dir)
-        .into_iter()
+    let all = list(data_dir);
+    // Only auto (bare-timestamp) backups are pruned to 30. Named/labeled
+    // snapshots are kept, so a user's named backup can't be silently deleted.
+    let auto: Vec<&BackupEntry> = all
+        .iter()
         .filter(|e| !e.name.is_empty() && e.name.chars().all(|c| c.is_ascii_digit()))
         .collect();
     for e in auto.iter().skip(30) {
+        let _ = delete(data_dir, &e.filename);
+    }
+    // Cap auto safety snapshots (one is written per restore/import) so the
+    // data-loss guard itself can't fill the disk. list() is newest-first.
+    let snaps: Vec<&BackupEntry> = all
+        .iter()
+        .filter(|e| e.name.starts_with("pre_restore_"))
+        .collect();
+    for e in snaps.iter().skip(5) {
         let _ = delete(data_dir, &e.filename);
     }
 }

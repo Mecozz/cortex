@@ -74,14 +74,13 @@ pub fn list(conn: &Connection) -> Result<Vec<Tool>> {
 }
 
 pub fn upsert(conn: &Connection, tool: &Tool) -> Result<()> {
-    conn.execute(
-        "INSERT INTO tools (id, name, description, code, version, is_active, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), unixepoch())
-         ON CONFLICT(name) DO UPDATE SET
-           description = excluded.description,
-           code        = excluded.code,
-           version     = excluded.version,
-           updated_at  = unixepoch()",
+    // `id` is the PK and `name` is UNIQUE — a single ON CONFLICT can't cover both
+    // (which broke renames: editing a tool's name hit the id PK conflict the
+    // name-target didn't catch). Update by id; insert only if the id is new.
+    let updated = conn.execute(
+        "UPDATE tools SET name = ?2, description = ?3, code = ?4, version = ?5,
+            is_active = ?6, updated_at = unixepoch()
+         WHERE id = ?1",
         params![
             tool.id,
             tool.name,
@@ -91,6 +90,20 @@ pub fn upsert(conn: &Connection, tool: &Tool) -> Result<()> {
             tool.is_active as i64
         ],
     )?;
+    if updated == 0 {
+        conn.execute(
+            "INSERT INTO tools (id, name, description, code, version, is_active, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), unixepoch())",
+            params![
+                tool.id,
+                tool.name,
+                tool.description,
+                tool.code,
+                tool.version,
+                tool.is_active as i64
+            ],
+        )?;
+    }
     Ok(())
 }
 

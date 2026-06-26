@@ -131,11 +131,13 @@ pub fn import_memories(conn: &Connection, proj_id: &str, path: &str) -> Result<u
 
     let _ = conn.execute_batch("BEGIN");
     // Self-healing: collapse duplicate-content facts within THIS project (e.g.
-    // from a double-click import) down to one each. Scoped to proj_id so it can't
-    // touch other projects, and inside the transaction so it rolls back on error.
+    // from a double-click import) down to one each. Scoped to is_current rows and
+    // keeps the NEWEST (MAX rowid) per content, so it never deletes a current
+    // fact in favour of a superseded one, and never touches retired/other-project
+    // rows. Inside the transaction so it rolls back on error.
     let _ = conn.execute(
-        "DELETE FROM facts WHERE proj_id = ?1 AND rowid NOT IN
-         (SELECT MIN(rowid) FROM facts WHERE proj_id = ?1 GROUP BY content)",
+        "DELETE FROM facts WHERE proj_id = ?1 AND is_current = 1 AND rowid NOT IN
+         (SELECT MAX(rowid) FROM facts WHERE proj_id = ?1 AND is_current = 1 GROUP BY content)",
         params![proj_id],
     );
 

@@ -190,10 +190,12 @@ pub async fn chat_message(
         return Err("Local-only mode is enabled. Switch provider to Ollama.".into());
     }
 
+    // Circuit breaker is keyed on the "providers" module (matching the health
+    // dashboard) so a tripped breaker actually shows up in Brain Status.
     if watch
         .0
         .lock()
-        .map(|cb| cb.is_disabled(&settings.provider))
+        .map(|cb| cb.is_disabled("providers"))
         .unwrap_or(false)
     {
         return Err(format!(
@@ -233,7 +235,7 @@ pub async fn chat_message(
     match result {
         Ok(resp) => {
             if let Ok(mut cb) = watch.0.lock() {
-                cb.record_success(&settings.provider);
+                cb.record_success("providers");
             }
             let entry = UsageEntry {
                 provider: resp.provider.clone(),
@@ -259,7 +261,7 @@ pub async fn chat_message(
         }
         Err(e) => {
             if let Ok(mut cb) = watch.0.lock() {
-                cb.record_failure(&settings.provider);
+                cb.record_failure("providers");
             }
             match policy {
                 FallbackPolicy::Silent => Ok(crate::providers::CompletionResponse {

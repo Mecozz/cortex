@@ -15,13 +15,17 @@ pub struct UsageEntry {
 
 /// Approximate costs per 1M tokens (input / output) in USD.
 /// Updated manually — not auto-fetched.
-fn cost_per_mtok(provider: &str, model: &str) -> (f64, f64) {
-    match (provider, model) {
-        ("claude", m) if m.contains("haiku") => (0.80, 4.00),
-        ("claude", m) if m.contains("sonnet") => (3.00, 15.00),
-        ("claude", m) if m.contains("opus") => (15.00, 75.00),
-        ("claude", _) => (3.00, 15.00),
-        _ => (0.0, 0.0),
+fn cost_per_mtok(_provider: &str, model: &str) -> (f64, f64) {
+    if model.contains("haiku") {
+        (1.00, 5.00) // Haiku 4.5
+    } else if model.contains("sonnet") {
+        (3.00, 15.00)
+    } else if model.contains("opus") {
+        (15.00, 75.00)
+    } else if model.contains("claude") {
+        (3.00, 15.00) // unknown Claude model → sonnet-class default
+    } else {
+        (0.0, 0.0)
     }
 }
 

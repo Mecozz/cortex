@@ -161,6 +161,13 @@
           </ul>
         {/if}
       </section>
+    {:else if tab === "data"}
+      <section>
+        <h3>Export data</h3>
+        <p class="empty">Export your whole brain to a JSON file &mdash; yours forever, importable anywhere.</p>
+        <button class="sm-btn" onclick={exportJson}>Export JSON</button>
+        {#if portMsg}<p class="empty">{portMsg}</p>{/if}
+      </section>
     {:else}
       <section>
         <h3>Reset levels</h3>

@@ -117,6 +117,7 @@ async fn sub_haiku(system: &str, user: &str, guard: &str, guard_file: &str) -> O
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
     };
     #[cfg(not(target_os = "windows"))]
@@ -126,6 +127,7 @@ async fn sub_haiku(system: &str, user: &str, guard: &str, guard_file: &str) -> O
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .spawn();
 
     let mut child = match spawn {
@@ -139,7 +141,17 @@ async fn sub_haiku(system: &str, user: &str, guard: &str, guard_file: &str) -> O
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(payload.as_bytes()).await;
     }
-    let out = child.wait_with_output().await.ok()?;
+    // Bound the wait — a hung `claude` would otherwise stall the whole background
+    // cycle. kill_on_drop ensures the timed-out child is reaped, not orphaned.
+    let out = match tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        child.wait_with_output(),
+    )
+    .await
+    {
+        Ok(Ok(o)) => o,
+        _ => return None,
+    };
     if !out.status.success() {
         return None;
     }
