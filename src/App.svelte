@@ -3,6 +3,8 @@
   import BackupPanel from "./lib/BackupPanel.svelte";
   import HealthPanel from "./lib/HealthPanel.svelte";
   import MemoryBrowser from "./lib/MemoryBrowser.svelte";
+  import MessageList from "./lib/MessageList.svelte";
+  import ChatInput from "./lib/ChatInput.svelte";
   import Settings from "./lib/Settings.svelte";
   import TaskPanel from "./lib/TaskPanel.svelte";
   import ToolsPanel from "./lib/ToolsPanel.svelte";
@@ -158,13 +160,6 @@
     }, 10);
   }
 
-  function handleKey(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
-
   function clearChat() {
     messages = [];
     queue = [];
@@ -212,49 +207,14 @@
     {:else}
       <main>
         <div class="messages" bind:this={messagesEl}>
-          {#if messages.length === 0}
-            <div class="empty">Start a conversation</div>
-          {/if}
-          {#each messages as msg (msg.id)}
-            <div class="message {msg.role}" class:dim={msg.status === "canceled"}>
-              <div class="bubble">{msg.content}</div>
-              {#if msg.role === "user" && msg.status === "queued"}
-                <span class="tag"
-                  >&#x23F3; queued &middot;
-                  <button class="cancel" onclick={() => cancelQueued(msg.id)}>cancel</button>
-                </span>
-              {:else if msg.status === "canceled"}
-                <span class="tag">canceled</span>
-              {:else if msg.status === "stopped"}
-                <span class="tag">&#x23F9; stopped</span>
-              {:else if msg.role === "assistant" && msg.provider}
-                <span class="provider-tag">{msg.provider}</span>
-              {/if}
-            </div>
-          {/each}
-          {#if loading}
-            <div class="message assistant">
-              <div class="bubble thinking">...</div>
-            </div>
-          {/if}
+          <MessageList {messages} {loading} onCancel={cancelQueued} />
         </div>
 
         {#if error}
           <div class="error-bar">{error}</div>
         {/if}
 
-        <div class="input-row">
-          <textarea
-            bind:value={input}
-            onkeydown={handleKey}
-            placeholder="Message... (Enter to send, Shift+Enter for newline)"
-            rows="3"
-          ></textarea>
-          {#if processing}
-            <button class="stop-btn" onclick={stop}>&#x23F9; Stop</button>
-          {/if}
-          <button onclick={send} disabled={!input.trim()}>Send</button>
-        </div>
+        <ChatInput bind:value={input} {processing} onSend={send} onStop={stop} />
       </main>
     {/if}
   </div>
@@ -362,106 +322,6 @@
     gap: 12px;
   }
 
-  .empty {
-    color: #444;
-    text-align: center;
-    margin-top: 40px;
-    font-size: 14px;
-  }
-
-  .message {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .message.user {
-    align-items: flex-end;
-  }
-
-  .bubble {
-    max-width: 72%;
-    padding: 10px 14px;
-    border-radius: 12px;
-    font-size: 14px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .message.user .bubble {
-    background: #5b21b6;
-    color: #fff;
-    border-bottom-right-radius: 4px;
-  }
-
-  .message.assistant .bubble {
-    background: #1c1c22;
-    border: 1px solid #2a2a32;
-    border-bottom-left-radius: 4px;
-  }
-
-  .provider-tag {
-    font-size: 10px;
-    color: #444;
-    margin-top: 3px;
-    margin-left: 2px;
-  }
-
-  .tag {
-    font-size: 11px;
-    color: #888;
-    margin-top: 3px;
-    margin-right: 2px;
-  }
-
-  .message.user .tag {
-    align-self: flex-end;
-  }
-
-  .message.dim .bubble {
-    opacity: 0.45;
-    text-decoration: line-through;
-  }
-
-  button.cancel {
-    background: none;
-    border: none;
-    color: #f87171;
-    cursor: pointer;
-    font-size: 11px;
-    padding: 0;
-    text-decoration: underline;
-  }
-
-  button.stop-btn {
-    background: #7f1d1d;
-    border: none;
-    border-radius: 8px;
-    color: #fff;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 0 16px;
-  }
-
-  button.stop-btn:hover {
-    background: #991b1b;
-  }
-
-  .thinking {
-    color: #555;
-    animation: pulse 1.2s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-
   .error-bar {
     background: #3b0a0a;
     border-top: 1px solid #7f1d1d;
@@ -470,53 +330,4 @@
     font-size: 13px;
   }
 
-  .input-row {
-    display: flex;
-    gap: 8px;
-    padding: 12px 16px;
-    border-top: 1px solid #222228;
-    flex-shrink: 0;
-  }
-
-  textarea {
-    flex: 1;
-    background: #18181f;
-    border: 1px solid #333;
-    border-radius: 8px;
-    color: #e8e8ec;
-    padding: 8px 12px;
-    font-family: inherit;
-    font-size: 14px;
-    resize: none;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-
-  textarea:focus {
-    border-color: #5b21b6;
-  }
-
-  textarea:disabled {
-    opacity: 0.5;
-  }
-
-  button[onclick] {
-    background: #5b21b6;
-    border: none;
-    border-radius: 8px;
-    color: #fff;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 0 20px;
-    transition: background 0.15s;
-  }
-
-  button[onclick]:hover:not(:disabled) {
-    background: #6d28d9;
-  }
-
-  button[onclick]:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
 </style>
