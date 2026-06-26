@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -16,16 +16,37 @@ fn now_secs() -> i64 {
         .as_secs() as i64
 }
 
-/// Store a fact. For identity/preference categories, invalidates all older facts
-/// in the same category first so the newer info takes precedence.
+/// Store a fact.
+///
+/// If an identical current fact already exists for the project, just refresh its
+/// confirmation time and keep the higher confidence (dedup + re-confirmation) —
+/// this both prevents unbounded duplicates and resets decay when the user
+/// re-mentions something. Otherwise insert a new current fact.
+///
+/// We deliberately do NOT retire a whole category: "identity" covers name, job,
+/// location, and family, so category-wide invalidation wiped unrelated facts
+/// (saving a location used to drop the user's name). True contradiction handling
+/// (same attribute, new value) is left to higher-level resolution.
 pub fn upsert(conn: &Connection, fact: &Fact) -> rusqlite::Result<()> {
     let now = now_secs();
-    if matches!(fact.category.as_str(), "identity" | "preference") {
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT rowid FROM facts
+             WHERE proj_id = ?1 AND content = ?2 AND is_current = 1
+             LIMIT 1",
+            params![fact.proj_id, fact.content],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(rowid) = existing {
         conn.execute(
-            "UPDATE facts SET is_current = 0, valid_until = ?1
-             WHERE proj_id = ?2 AND category = ?3 AND is_current = 1",
-            params![now, fact.proj_id, fact.category],
+            "UPDATE facts
+             SET last_confirmed_at = ?1,
+                 confidence_score = MAX(confidence_score, ?2)
+             WHERE rowid = ?3",
+            params![now, fact.confidence as f64, rowid],
         )?;
+        return Ok(());
     }
     conn.execute(
         "INSERT INTO facts

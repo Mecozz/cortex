@@ -108,7 +108,18 @@
       });
   }
   let oauthLoading = $state(false);
-  const oauthLogin = () => { oauthLoading = true; invoke<string>("oauth_login").then((t) => { settings.api_key_anthropic = t; oauthLoading = false; alert("OK: " + t.slice(0,30)); }).catch((e) => { loadError = String(e); oauthLoading = false; alert("ERR: " + String(e)); }); };
+  let oauthMsg = $state("");
+  const oauthLogin = () => {
+    oauthLoading = true;
+    oauthMsg = "";
+    invoke<string>("oauth_login")
+      .then((t) => {
+        settings.api_key_anthropic = t;
+        oauthMsg = "Connected to Claude.ai. Click Save to keep it.";
+      })
+      .catch((e) => (oauthMsg = "Login failed: " + String(e)))
+      .finally(() => (oauthLoading = false));
+  };
 
   let importPath = $state("");
   let importing = $state(false);
@@ -183,6 +194,9 @@
         />
       </label>
       <button type="button" onclick={oauthLogin} disabled={oauthLoading}>{oauthLoading ? "Opening browser..." : "Connect Claude.ai"}</button>
+      {#if oauthMsg}
+        <p class="smsg">{oauthMsg}</p>
+      {/if}
       <label>
         Model
         <select bind:value={settings.model}>

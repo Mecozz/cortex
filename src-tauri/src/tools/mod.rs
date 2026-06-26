@@ -1,6 +1,5 @@
 pub mod health;
 
-use reqwest::Client;
 use rhai::{Dynamic, Engine, Scope};
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
@@ -118,41 +117,21 @@ Rhai is a Rust-embedded scripting language. Rules: \
 (3) Standard math, string, and array operations are available. No file I/O or network. \
 Return ONLY the Rhai code. No markdown fences, no explanation.";
 
+/// Generate a Rhai tool from a description. Uses the Anthropic API if a key is
+/// set, else the Claude Code subscription (so Forge works on either auth).
 pub async fn forge(description: &str, api_key: &str) -> Result<String, String> {
-    if api_key.is_empty() {
-        return Err("API key required for FORGE".into());
-    }
-    let body = serde_json::json!({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 1024,
-        "system": FORGE_SYSTEM,
-        "messages": [{"role": "user", "content": description}]
-    });
-    let resp = Client::new()
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&body)
-        .send()
+    let raw = crate::core::llm::generate(api_key, FORGE_SYSTEM, description, 1024)
         .await
-        .map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("API error: {}", resp.status()));
-    }
-    #[derive(Deserialize)]
-    struct Block {
-        text: String,
-    }
-    #[derive(Deserialize)]
-    struct Resp {
-        content: Vec<Block>,
-    }
-    let parsed: Resp = resp.json().await.map_err(|e| e.to_string())?;
-    let code = parsed
-        .content
-        .into_iter()
-        .map(|b| b.text)
-        .collect::<String>();
+        .ok_or("Tool generation failed (no API key, and Claude subscription unavailable)")?;
+    // Strip any code fences the model may add despite instructions.
+    let code = raw
+        .trim()
+        .trim_start_matches("```rhai")
+        .trim_start_matches("```rust")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+        .to_string();
     validate(&code)?;
     Ok(code)
 }

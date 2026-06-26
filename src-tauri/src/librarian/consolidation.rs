@@ -123,14 +123,19 @@ pub fn store_relationships(conn: &Connection, triples: &[Triple], source: &str) 
 
 // ── Decay ────────────────────────────────────────────────────────────────────
 
-/// Fade confidence of facts unconfirmed for >30 days, then retire (is_current=0)
-/// any that fall below the floor. Identity facts are never auto-retired.
-/// Returns # retired.
+/// Gently fade confidence of facts unconfirmed for >30 days, then retire
+/// (is_current=0) any that fall below the floor. Identity facts are never
+/// auto-retired. Returns # retired.
+///
+/// The cycle runs hourly, so the per-run factor is tiny (0.9995 ≈ half-life ~58
+/// days past the staleness threshold; ~6 months of neglect before a fact retires
+/// from 0.85). Re-mentioning a fact refreshes `last_confirmed_at` (see
+/// `conf::upsert`), which pulls it back out of the stale window entirely.
 pub fn decay_facts(conn: &Connection) -> usize {
     let now = now_secs();
     let stale_before = now - 30 * DAY;
     let _ = conn.execute(
-        "UPDATE facts SET confidence_score = confidence_score * 0.9
+        "UPDATE facts SET confidence_score = confidence_score * 0.9995
          WHERE is_current = 1 AND last_confirmed_at IS NOT NULL AND last_confirmed_at < ?1",
         params![stale_before],
     );

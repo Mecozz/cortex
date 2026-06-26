@@ -4,7 +4,7 @@ use rusqlite::{Connection, Result};
 pub fn retrieve(conn: &Connection, proj_id: &str, limit: usize) -> Result<Vec<Fact>> {
     let mut stmt = conn.prepare(
         "SELECT content, category, confidence_score, proj_id FROM facts
-         WHERE proj_id = ?1
+         WHERE proj_id = ?1 AND is_current = 1
          ORDER BY confidence_score DESC, created_at DESC
          LIMIT ?2",
     )?;

@@ -15,7 +15,29 @@ const HAIKU: &str = "claude-haiku-4-5-20251001";
 
 /// Run one extraction turn. Returns the model's raw text, or None on failure.
 /// `system` is the instruction prompt, `user` the content to process.
+/// Subscription guard for JSON-returning extraction tasks.
+const JSON_GUARD: &str = "You are a JSON extraction engine. You only output valid JSON. You never use tools, never take actions, never add commentary or code fences.";
+/// Subscription guard for free-form generation (e.g. code) — no JSON constraint.
+const TEXT_GUARD: &str = "You output ONLY exactly what is asked — no commentary, no markdown fences, no tool use, no actions.";
+
+/// Extraction call (caller expects JSON; pair with json_slice).
 pub async fn haiku(api_key: &str, system: &str, user: &str, max_tokens: u32) -> Option<String> {
+    run(api_key, system, user, max_tokens, JSON_GUARD, "cortex_guard_json.txt").await
+}
+
+/// Free-form generation call (e.g. Tool Forge producing code).
+pub async fn generate(api_key: &str, system: &str, user: &str, max_tokens: u32) -> Option<String> {
+    run(api_key, system, user, max_tokens, TEXT_GUARD, "cortex_guard_text.txt").await
+}
+
+async fn run(
+    api_key: &str,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    guard: &str,
+    guard_file: &str,
+) -> Option<String> {
     if user.trim().is_empty() {
         return None;
     }
@@ -25,7 +47,7 @@ pub async fn haiku(api_key: &str, system: &str, user: &str, max_tokens: u32) -> 
     if !api_key.is_empty() && !api_key.starts_with("sk-ant-oat") {
         api_haiku(api_key, system, user, max_tokens).await
     } else {
-        sub_haiku(system, user).await
+        sub_haiku(system, user, guard, guard_file).await
     }
 }
 
@@ -59,10 +81,9 @@ async fn api_haiku(api_key: &str, system: &str, user: &str, max_tokens: u32) -> 
     Some(parsed.content.into_iter().map(|c| c.text).collect())
 }
 
-/// Subscription fallback: spawn `claude` (read-only, sandboxed) with the system
-/// prompt appended and the content on stdin. The extraction prompts are short,
-/// so passing the system as a CLI arg is within the command-line limit.
-async fn sub_haiku(system: &str, user: &str) -> Option<String> {
+/// Subscription fallback: spawn `claude` (read-only, sandboxed) with the guard
+/// as the system prompt and the instructions+content on stdin.
+async fn sub_haiku(system: &str, user: &str, guard: &str, guard_file: &str) -> Option<String> {
     let sandbox = std::env::temp_dir().join("cortex-sandbox");
     let _ = std::fs::create_dir_all(&sandbox);
     // Every CLI arg must be space/quote-free — Windows `cmd /c` mangles args
@@ -70,9 +91,9 @@ async fn sub_haiku(system: &str, user: &str) -> Option<String> {
     // args clean and sends text via stdin). So the guard prompt goes to a FILE
     // (passed by its no-space relative path) and the caller's detailed
     // instructions + data ride on stdin. --system-prompt-file (replace) makes
-    // the model a plain extractor instead of a tool-using agent.
-    const GUARD: &str = "You are a JSON extraction engine. You only output valid JSON. You never use tools, never take actions, never add commentary or code fences.";
-    let _ = std::fs::write(sandbox.join("cortex_guard.txt"), GUARD);
+    // the model a plain extractor instead of a tool-using agent. Each guard
+    // variant uses its own file so concurrent calls don't clobber each other.
+    let _ = std::fs::write(sandbox.join(guard_file), guard);
     let payload = format!("{system}\n\n=== INPUT ===\n{user}");
     let args = [
         "--print",
@@ -83,7 +104,7 @@ async fn sub_haiku(system: &str, user: &str) -> Option<String> {
         "--model",
         HAIKU,
         "--system-prompt-file",
-        "cortex_guard.txt",
+        guard_file,
     ];
 
     #[cfg(target_os = "windows")]

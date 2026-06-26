@@ -129,14 +129,16 @@ pub fn import_memories(conn: &Connection, proj_id: &str, path: &str) -> Result<u
         .unwrap_or_default()
         .as_secs() as i64;
 
-    // Self-healing: collapse any existing duplicate-content facts (e.g. from a
-    // double-click import) down to one each before importing.
+    let _ = conn.execute_batch("BEGIN");
+    // Self-healing: collapse duplicate-content facts within THIS project (e.g.
+    // from a double-click import) down to one each. Scoped to proj_id so it can't
+    // touch other projects, and inside the transaction so it rolls back on error.
     let _ = conn.execute(
-        "DELETE FROM facts WHERE rowid NOT IN (SELECT MIN(rowid) FROM facts GROUP BY content)",
-        [],
+        "DELETE FROM facts WHERE proj_id = ?1 AND rowid NOT IN
+         (SELECT MIN(rowid) FROM facts WHERE proj_id = ?1 GROUP BY content)",
+        params![proj_id],
     );
 
-    let _ = conn.execute_batch("BEGIN");
     let mut imported = 0;
     for m in mems {
         let content = if m.title.trim().is_empty() {
